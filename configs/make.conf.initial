@@ -16,7 +16,7 @@ ACCEPT_LICENSE="*"
 VIDEO_CARDS="amdgpu radeonsi nvidia"
 
 USE=" acl amd64 bzip2 cet crypt gdbm hardened iconv ipv6 libtirpc multilib ncurses nls openmp pam pcre pic pie readline seccomp ssl ssp test-rust unicode xattr xtpax zlib \
-    custom-cflags alsa vaapi pipewire wifi network pipewire-alsa nvidia wayland -X -systemd lto pgo graphite -udev mdev dinit"
+    custom-cflags alsa vaapi pipewire wifi network pipewire-alsa nvidia wayland -X -systemd lto pgo graphite -udev mdev dinit -lvm -clang"
 
 # NOTE: This stage was built with the bindist USE flag enabled
 
