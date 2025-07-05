@@ -14,20 +14,20 @@ cd /mnt/gentoo
 btrfs subvol create {@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots}
 cd ../
 umount /mnt/gentoo
-mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/nvme0n1p3 /mnt/gentoo/
+mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/
 cd /mnt/gentoo
 mkdir ./{home,.snapshots,var,efi}
 mkdir ./var/{cache,db,log,tmp}
 mkdir ./var/db/repos
 mkdir ./var/cache/binpkgs
 mount /dev/nvme0n1p1 /mnt/gentoo/efi
-mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/nvme0n1p3 /mnt/gentoo/home
-mount -o defaults,noatime,compress-force=zstd,subvol=@.snapshots /dev/nvme0n1p3 /mnt/gentoo/home/.snapshots
-mount -o defaults,noatime,compress-force=zstd,subvol=@tmp /dev/nvme0n1p3 /mnt/gentoo/var/tmp
-mount -o defaults,noatime,compress-force=zstd,subvol=@log /dev/nvme0n1p3 /mnt/gentoo/var/log
-mount -o defaults,noatime,compress-force=zstd,subvol=@cache /dev/nvme0n1p3 /mnt/gentoo/var/cache
-mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/nvme0n1p3 /mnt/gentoo/var/db/repos
-mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/nvme0n1p3 /mnt/gentoo/cache/binpkgs
+mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/mapper/cryptroot /mnt/gentoo/home
+mount -o defaults,noatime,compress-force=zstd,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots
+mount -o defaults,noatime,compress-force=zstd,subvol=@tmp /dev/mapper/cryptroot /mnt/gentoo/var/tmp
+mount -o defaults,noatime,compress-force=zstd,subvol=@log /dev/mapper/cryptroot /mnt/gentoo/var/log
+mount -o defaults,noatime,compress-force=zstd,subvol=@cache /dev/mapper/cryptroot /mnt/gentoo/var/cache
+mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/mapper/cryptroot /mnt/gentoo/var/db/repos
+mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs
 mkswap /dev/nvme0n1p2
 swapon /dev/nvme0n1p2
 
