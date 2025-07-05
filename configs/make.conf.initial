@@ -2,14 +2,14 @@
 # built this stage.
 # Please consult /usr/share/portage/config/make.conf.example for a more
 # detailed example.
-COMMON_FLAGS="-O3 -pipe -march=native "
+COMMON_FLAGS="-O2 -pipe -march=native "
 CFLAGS="${COMMON_FLAGS}"
 CXXFLAGS="${COMMON_FLAGS}"
 FCFLAGS="${COMMON_FLAGS}"
 FFLAGS="${COMMON_FLAGS}"
 LDFLAGS="${LDFLAGS} ${COMMON_FLAGS}"
 FEATURES="parallel-fetch"
-CPU_FLAGS_X86="aes avx avx2 bmi1 bmi2 f16c fma3 mmx mmxext pclmul popcnt rdrand sha sse sse2 sse3 sse4_1 sse4_2 sse4a ssse3"
+
 RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
 
 ACCEPT_LICENSE="*"
