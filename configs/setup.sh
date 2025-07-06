@@ -1,5 +1,7 @@
 #! /bin/bash
 
+source /etc/profile
+export PS1="(chroot) ${PS1}"
 current_path=$(dirname $0)
 emerge --oneshot app-portage/cpuid2cpuflags
 cpu_flags=$(cpuid2cpuflags) && [[ "$cpu_flags" =~ :(.+) ]]
