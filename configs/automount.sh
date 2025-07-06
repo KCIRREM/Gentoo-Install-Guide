@@ -1,11 +1,10 @@
 #! /bin/bash
 current_path_abs=$(realpath $(dirname $0))
 mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/
-cd /mnt/gentoo
-mkdir ./{home,.snapshots,var,efi}
-mkdir ./var/{cache,db,log,tmp}
-mkdir ./var/db/repos
-mkdir ./var/cache/binpkgs
+mkdir -p /mnt/gentoo/{home,.snapshots,var,efi}
+mkdir -p /mnt/gentoo/var/{cache,db,log,tmp}
+mkdir -p /mnt/gentoo/var/db/repos
+mkdir -p /mnt/gentoo/var/cache/binpkgs
 mount /dev/nvme0n1p1 /mnt/gentoo/efi
 mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/mapper/cryptroot /mnt/gentoo/home
 mount -o defaults,noatime,compress-force=zstd,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots
