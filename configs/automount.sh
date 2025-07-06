@@ -1,4 +1,5 @@
 #! /bin/bash
+current_path_abs=$(realpath $(dirname $0))
 mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/
 cd /mnt/gentoo
 mkdir ./{home,.snapshots,var,efi}
@@ -25,6 +26,7 @@ mount --make-slave /mnt/gentoo/run
 test -L /dev/shm && rm /dev/shm && mkdir /dev/shm 
 mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm 
 chmod 1777 /dev/shm /run/shm
+cp -r $current_path_abs /mnt/gentoo/
 chroot /mnt/gentoo /bin/bash 
 source /etc/profile 
 export PS1="(chroot) ${PS1}"
