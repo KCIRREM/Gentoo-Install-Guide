@@ -15,7 +15,8 @@ mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/mapper/cryptroo
 mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs
 
 wget https://distfiles.gentoo.org/releases/amd64/autobuilds/20250702T205201Z/stage3-amd64-hardened-openrc-20250702T205201Z.tar.xz
-tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo
+mv stage3-*.tar.xz /mnt/gentoo/*
+tar xpvf /mnt/gentoo/stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo
 cp --dereference /etc/resolv.conf /mnt/gentoo/etc/
 mount --types proc /proc /mnt/gentoo/proc
 mount --rbind /sys /mnt/gentoo/sys 
