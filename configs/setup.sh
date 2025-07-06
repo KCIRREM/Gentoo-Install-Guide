@@ -1,5 +1,9 @@
 #! /bin/bash
+
 current_path=$(dirname $0)
+emerge --oneshot app-portage/cpuid2cpuflags
+cpu_flags=$(cpuid2cpuflags) && [[ "$cpu_flags" =~ :(.+) ]]
+echo "CPU_FLAGS_X86=\"${BASH_REMATCH[1]}\"" >> $current_path/make.conf.initial
 mem_cap_GB=$(free -h --si | awk 'NR==2 {print $2}')
 mem_cap_GB=${free_out::-1}
 thread_num=$(($(($(lscpu -e=cpu | tail -1) + 1)) * 2))
