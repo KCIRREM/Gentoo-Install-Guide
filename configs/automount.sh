@@ -1,6 +1,6 @@
 #! /bin/bash
 
-current_path_abs=$(realpath $(dirname $0))
+current_path_abs=$(dirname "$(realpath $0)") 
 mkdir -p /mnt/gentoo
 mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/
 
