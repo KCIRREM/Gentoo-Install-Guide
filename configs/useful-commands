@@ -1,0 +1,4 @@
+qemu invaluable to debuging kernel panics when you don't even make it to the init file.
+
+sudo apt install qemu-utils qemu-system-x86 qemu-system-gui
+qemu-system-x86_64 -kernel /mnt/gentoo/efi/EFI/Gentoo/bzImage.efi -initrd /mnt/gentoo/efi/EFI/Gentoo/initramfs.cpio.gz -serial stdio -append "root=/dev/ram0 console=ttyAMA0 console=ttyS0"
