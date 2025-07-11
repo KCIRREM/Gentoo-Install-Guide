@@ -1,0 +1,28 @@
+#!/bin/busybox sh
+
+rescue_shell() {
+    echo "$@"
+    echo "Something went wrong. Dropping you to a shell."
+    # The symlinks are not required any longer
+    # but it helps tab completion
+    /bin/busybox --install -s
+    exec /bin/sh
+}
+
+
+busybox mount -t devtmpfs none /dev || rescue_shell "Error: mount /devtmpfs failed !"
+busybox mount -t proc none /proc || rescue_shell "Error: mount /proc failed !"
+busybox mount -t sysfs none /sys || rescue_shell "Error: mount /sysfs failed !"
+
+cryptsetup luksOpen /dev/nvme0n1p3 cryptroot || rescue_shell "Failed to decrypt"
+wait
+mount -o rw,noatime,compress-force=zstd:3,ssd,space_cache=v2,subvol=/@ /dev/mapper/cryptroot /mnt/root || rescue_shell "Error: mount /root failed!"
+
+echo "All done. Switching to real root."
+
+echo "hello, devices $(ls /dev/mapper)"
+umount /proc
+umount /sys
+mount -o move /dev /mnt/root/dev
+
+exec switch_root /mnt/root /sbin/init
