@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+if [ ${INSTALLKERNEL_INITRD_GENERATOR} == "custom" ]; then
+	echo "Creating custom initramfs!"
+	cd /usr/src/linux
+	usr/gen_init_cpio ../initramfs/initramfs_list > ../initramfs/initramfs.cpio
+	gzip --best ../initramfs/initramfs.cpio
+	mv ../initramfs/initramfs.cpio.gz ${INSTALLKERNEL_STAGING_AREA}/initrd
+	echo ${INSTALLKERNEL_STAGING_AREA}
+fi
