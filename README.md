@@ -7,117 +7,117 @@ efi partiton, swap, luks on btrfs \
 format appropriately \
 setup passphrase \
 '''
-cryptsetup luksFormat --key-size 512 /dev/nvme0n1p3
-cryptsetup luksOpen /dev/nvme0n1p3 cryptroot
-mkfs.btrfs /dev/mapper/cryptroot
-mkdir -p /mnt/gentoo
-mount /dev/mapper/cryptroot /mnt/gentoo
-cd /mnt/gentoo
+cryptsetup luksFormat --key-size 512 /dev/nvme0n1p3 \
+cryptsetup luksOpen /dev/nvme0n1p3 cryptroot \
+mkfs.btrfs /dev/mapper/cryptroot \
+mkdir -p /mnt/gentoo \
+mount /dev/mapper/cryptroot /mnt/gentoo \
+cd /mnt/gentoo \
 '''
-create subvols
+create subvols \
 '''
-btrfs subvol create {@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots}
+btrfs subvol create {@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots} \
 '''
-mount
+mount \
 '''
-cd ../
-umount /mnt/gentoo
-mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/
-cd /mnt/gentoo
-mkdir ./{home,.snapshots,var,efi}
-mkdir ./var/{cache,db,log,tmp}
-mkdir ./var/db/repos
-mkdir ./var/cache/binpkgs
-mount /dev/nvme0n1p1 /mnt/gentoo/efi
-mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/mapper/cryptroot /mnt/gentoo/home
-mount -o defaults,noatime,compress-force=zstd,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots
-mount -o defaults,noatime,compress-force=zstd,subvol=@tmp /dev/mapper/cryptroot /mnt/gentoo/var/tmp
-mount -o defaults,noatime,compress-force=zstd,subvol=@log /dev/mapper/cryptroot /mnt/gentoo/var/log
-mount -o defaults,noatime,compress-force=zstd,subvol=@cache /dev/mapper/cryptroot /mnt/gentoo/var/cache
-mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/mapper/cryptroot /mnt/gentoo/var/db/repos
-mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs
-mkswap /dev/nvme0n1p2
-swapon /dev/nvme0n1p2
+cd ../ \
+umount /mnt/gentoo \
+mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/ \
+cd /mnt/gentoo \
+mkdir ./{home,.snapshots,var,efi} \
+mkdir ./var/{cache,db,log,tmp} \
+mkdir ./var/db/repos \
+mkdir ./var/cache/binpkgs \
+mount /dev/nvme0n1p1 /mnt/gentoo/efi \
+mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/mapper/cryptroot /mnt/gentoo/home \
+mount -o defaults,noatime,compress-force=zstd,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots \
+mount -o defaults,noatime,compress-force=zstd,subvol=@tmp /dev/mapper/cryptroot /mnt/gentoo/var/tmp \
+mount -o defaults,noatime,compress-force=zstd,subvol=@log /dev/mapper/cryptroot /mnt/gentoo/var/log \
+mount -o defaults,noatime,compress-force=zstd,subvol=@cache /dev/mapper/cryptroot /mnt/gentoo/var/cache \
+mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/mapper/cryptroot /mnt/gentoo/var/db/repos \
+mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs \
+mkswap /dev/nvme0n1p2 \
+swapon /dev/nvme0n1p2 \
 '''
-download the tarball and extract it
+download the tarball and extract it \
 '''
-tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo
+tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo \
 '''
-prepare system and chroot
+prepare system and chroot \
 '''
-cp --dereference /etc/resolv.conf /mnt/gentoo/etc/
-mount --types proc /proc /mnt/gentoo/proc
-mount --rbind /sys /mnt/gentoo/sys 
-mount --rbind /dev /mnt/gentoo/dev
-mount --bind /run /mnt/gentoo/run 
-mount --make-slave /mnt/gentoo/run
-test -L /dev/shm && rm /dev/shm && mkdir /dev/shm 
-mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm 
-chmod 1777 /dev/shm /run/shm
-chroot /mnt/gentoo /bin/bash 
-source /etc/profile 
-export PS1="(chroot) ${PS1}"
+cp --dereference /etc/resolv.conf /mnt/gentoo/etc/ \
+mount --types proc /proc /mnt/gentoo/proc \
+mount --rbind /sys /mnt/gentoo/sys \
+mount --rbind /dev /mnt/gentoo/dev \
+mount --bind /run /mnt/gentoo/run \
+mount --make-slave /mnt/gentoo/run \
+test -L /dev/shm && rm /dev/shm && mkdir /dev/shm \
+mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm \
+chmod 1777 /dev/shm /run/shm \
+chroot /mnt/gentoo /bin/bash \
+source /etc/profile \
+export PS1="(chroot) ${PS1}" \
 '''
-Install Gentoo snapshot
-'emerge-webrsync'
-make.conf and and system rpfile stuff (including enabling lto)
+Install Gentoo snapshot \
+'emerge-webrsync' \
+make.conf and and system rpfile stuff (including enabling lto) \
 '''
-emerge --ask --oneshot app-portage/cpuid2cpuflags
-emerge -aqv eselect-repository
-mkdir /etc/portage/repos.conf
-cat /usr/share/portage/cofig/repos.conf > /etc/portage/repos.conf/eselect-repo.conf
-eselect repository add lto-overlay git https://github.com/InBetweenNames/gentooLTO.git
-eselect repository add mez-overlay git https://github.com/KCIRREM/mez-overlay.git
-echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf
-emerge sys-config/ltoize
-eselect profile list
+emerge --ask --oneshot app-portage/cpuid2cpuflags \
+emerge -aqv eselect-repository \
+mkdir /etc/portage/repos.conf \
+cat /usr/share/portage/cofig/repos.conf > /etc/portage/repos.conf/eselect-repo.conf \
+eselect repository add lto-overlay git https://github.com/InBetweenNames/gentooLTO.git \
+eselect repository add mez-overlay git https://github.com/KCIRREM/mez-overlay.git \
+echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf \
+emerge sys-config/ltoize \
+eselect profile list \
 '''
-select the dinit one
+select the dinit one \
 '''
-eselect profile set 77
+eselect profile set 77 \
 '''
-replace VIDEO_CARDS with your ow
+replace VIDEO_CARDS with your ow \
 '''
-echo "CPU_FLAGS_X86=\"$(cpuid2cpuflags | sed 's/.*://g')\"" >> /etc/portage/make.conf
-echo -e 'ACCEPT_LICENSE="*"\nVIDEO_CARDS="amdgpu radeonsi nvidia"'
+echo "CPU_FLAGS_X86=\"$(cpuid2cpuflags | sed 's/.*://g')\"" >> /etc/portage/make.conf \
+echo -e 'ACCEPT_LICENSE="*"\nVIDEO_CARDS="amdgpu radeonsi nvidia"' \
 '''
-update world to reflect new profile
+update world to reflect new profile \
 '''
-emerge --ask --verbose --update --deep --changed-use @world
-emerge --ask --depclean
+emerge --ask --verbose --update --deep --changed-use @world \
+emerge --ask --depclean \
 '''
-set time zone
+set time zone \
 '''
-ln -sf ../usr/share/zoneinfo/Europe/London /etc/localtime
+ln -sf ../usr/share/zoneinfo/Europe/London /etc/localtime \
 '''
-set locale
+set locale \
 '''
-echo -e "en_GB ISO-8859-1\nen_GB.UTF-8 UTF-8" >> /etc/locale.gen
-eselect locale list
-eselect locale set 4
-env-update && source /etc/profile && export PS1="(chroot) ${PS1}"
+echo -e "en_GB ISO-8859-1\nen_GB.UTF-8 UTF-8" >> /etc/locale.gen \
+eselect locale list \
+eselect locale set 4 \
+env-update && source /etc/profile && export PS1="(chroot) ${PS1}" \
 '''
 
 I will be doing a manual kernel comp follow the wiki for distribution
 '''
-emerge --ask sys-kernel/linux-firmware
-emerge --ask sys-firmware/sof-firmware
-emerge --ask sys-kernel/installkernel
+emerge --ask sys-kernel/linux-firmware \
+emerge --ask sys-firmware/sof-firmware \
+emerge --ask sys-kernel/installkernel \
 '''
-clone this repo and copy appropriate files into install kernel
+clone this repo and copy appropriate files into install kernel \
 '''
-git clone https://github.com/KCIRREM/Gentoo-Install-Guide.git
-cp -r Gentoo-Install-Guide/configs/kernel/installkernel/ /etc/kernel/
-mkdir -p /efi/EFI/Gentoo
-emerge --ask sys-kernel/gentoo-sources
+git clone https://github.com/KCIRREM/Gentoo-Install-Guide.git \
+cp -r Gentoo-Install-Guide/configs/kernel/installkernel/ /etc/kernel/ \
+mkdir -p /efi/EFI/Gentoo \
+emerge --ask sys-kernel/gentoo-sources \
 '''
-I've already got a config but I'll make a guide or something here
+I've already got a config but I'll make a guide or something here \
 '''
-cd /usr/src/linux
-make -j8 && make -j8 modules_install
-make install
+cd /usr/src/linux \
+make -j8 && make -j8 modules_install \
+make install \
 '''
-now we need to sort out all of the dinit scripts
+now we need to sort out all of the dinit scripts \
 
 
 
