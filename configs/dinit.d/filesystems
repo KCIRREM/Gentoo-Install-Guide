@@ -1,0 +1,11 @@
+# Auxillary (non-root) filesystems
+
+type = scripted
+command = /etc/dinit.d/filesystems.sh start
+restart = false
+logfile = /var/log/dinit-filesystems.log
+start-timeout = 1200   # 20 minutes
+options: starts-on-console
+
+depends-on: mdev
+waits-for: rootrw
