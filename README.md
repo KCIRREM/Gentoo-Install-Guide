@@ -118,7 +118,11 @@ make -j8 && make -j8 modules_install
 make install 
 ```
 now we need to sort out all of the dinit scripts 
-
+```
+cp -r /Gentoo-Install-Scripts/configs/dinit /etc/
+mkdir /etc/dinit/boot.d
+ln -s /etc/dinit.d/late-filesystems /etc/dinit.d/boot.d/late-filesystems
+```
 
 
 
