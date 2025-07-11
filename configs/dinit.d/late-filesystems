@@ -1,0 +1,10 @@
+# Filesystems which can be mounted after login is enabled.
+
+type = scripted
+command = /etc/dinit.d/late-filesystems.sh start
+restart = false
+logfile = /var/log/late-filesystems.log
+start-timeout = 0   # unlimited 
+options: start-interruptible starts-on-console 
+
+depends-on: rcboot
