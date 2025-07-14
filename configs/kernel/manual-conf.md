@@ -41,8 +41,8 @@ _**General setup --> Configure standard kernel features (expert users)**_ (**ena
 _**Processor type and features --> Supported processor vendors**_ (**choose appropriate processor**)
 
 
-Continue with setiing up the kernel modules, using the ouput you've saved from the kernel creation go ahead and search for all the Warning modules and enable them (f8 is to search) then,for all the others that were not found have a look 
-and see which ones you think you might need and search for part of them and from there select the most appropriate looking option, if there isn't one just skip it.
+Continue with setiing up the kernel modules, using the ouput you've saved from the kernel creation go ahead and search for all the **Warning** modules and enable them (f8 is to search) then,for all the others that were not found have a look 
+and see which ones you think you might need, search for part of them and from there select the most appropriate looking option, if there isn't one just skip it.
 
 Then just go thorugh most of the kernel up until device drivers and enable anything you think you'll need, you can always just pres h to view a 
 detailed description of the currenlty selected option
