@@ -7,7 +7,7 @@ These large distributions have to support a lot of hardware so they'll likely ju
 When you go to boot linux mint for the first time eneter the grub config by hitting e and then append the following lines to the config,
 
 ```
-GRUB_CMDLINE_LINUX_DEFAULT=dyndbg="file drivers/base/firmware_loader/main.c +fmp"
+dyndbg="file drivers/base/firmware_loader/main.c +fmp"
 ```
 <sup>_Credit to this absolute hero for figuring this one out ("https://serverfault.com/questions/1026598/know-which-firmware-my-linux-kernel-has-loaded-since-booting")_</sup>
 
