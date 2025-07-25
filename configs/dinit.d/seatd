@@ -1,0 +1,6 @@
+type = process
+smooth-recovery = true
+command = seatd -g seat
+logfile = /var/log/seatd
+
+depends-on: rcboot
