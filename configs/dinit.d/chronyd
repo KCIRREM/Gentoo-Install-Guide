@@ -1,0 +1,7 @@
+type = bgprocess
+pid-file = /var/usr/chrony/chrony.pid
+command = /usr/bin/chronyd
+logfile = /var/log/chronyd
+smooth-recovery = true
+
+depends-on dhcpcd
