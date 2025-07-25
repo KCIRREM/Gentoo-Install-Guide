@@ -1,0 +1,6 @@
+type = process
+command = /usr/libexec
+logfile = /var/log/iwd.log
+smooth-recovery = true
+
+depends-on: dbusd
