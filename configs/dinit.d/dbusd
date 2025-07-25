@@ -1,0 +1,6 @@
+type = process
+command = /usr/bin/dbus-daemon --system --nofork --nopidfile --print-address=4
+logfile = /var/log/dbus-daemon.log
+ready-notification = pipefd:4
+smooth-recovery = yes
+depends-on: rcboot
