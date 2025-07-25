@@ -76,7 +76,7 @@ select the dinit one
 ```
 eselect profile set 77 
 ```
-replace VIDEO_CARDS with your ow 
+replace VIDEO_CARDS with your own
 ```
 echo "CPU_FLAGS_X86=\"$(cpuid2cpuflags | sed 's/.*://g')\"" >> /etc/portage/make.conf 
 echo -e 'ACCEPT_LICENSE="*"\nVIDEO_CARDS="amdgpu radeonsi nvidia"' 
@@ -100,6 +100,7 @@ env-update && source /etc/profile && export PS1="(chroot) ${PS1}"
 
 I will be doing a manual kernel comp follow the wiki for distribution
 ```
+emerge --ask sys-fs/crypt-setup sys-fs/btrfs-progs app-arch/lz4
 emerge --ask sys-kernel/linux-firmware 
 emerge --ask sys-firmware/sof-firmware 
 emerge --ask sys-kernel/installkernel 
@@ -123,8 +124,25 @@ cp -r /Gentoo-Install-Scripts/configs/dinit /etc/
 mkdir /etc/dinit/boot.d
 ln -s /etc/dinit.d/late-filesystems /etc/dinit.d/boot.d/late-filesystems
 ```
+install any additional scripts here, for me thats:
+```
+ln -s /etc/dinit.d/chrony /etc/dinit.d/boot.d/chrony
+ln -s /etc/dinit.d/dbusd /etc/dinit.d/boot.d/dbusd
+ln -s /etc/dinit.d/dhcpcd /etc/dinit.d/boot.d/dhcpcd
+ln -s /etc/dinit.d/iwd /etc/dinit.d/boot.d/iwd
+ln -s /etc/dinit.d/seatd /etc/dinit.d/boot.d/seatd
 
-
+```
+Install system utilities
+for seatd we need to use the useflag server, no elogind
+```
+echo "sys-auth/seatd server" > /etc/portage/package.use/seatd"
+```
+Install packages
+```
+emerge -av iwd net-wireless/iwd sys-apps/dbus sys-auth/seatd net-misc/chrony net-misc/dhcpcd app-admin/sysklogd
+```
+Reboot and you should have a working system
 
 
 
