@@ -58,18 +58,18 @@ chroot /mnt/gentoo /bin/bash
 source /etc/profile 
 export PS1="(chroot) ${PS1}" 
 ```
-Install Gentoo snapshot \
-'emerge-webrsync' \
-make.conf and and system rpfile stuff (including enabling lto) 
+Install Gentoo snapshot
+``
+emerge-webrsync
+```
+make.conf and and system profile stuff (including enabling lto) 
 ```
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
 mkdir /etc/portage/repos.conf 
 cat /usr/share/portage/cofig/repos.conf > /etc/portage/repos.conf/eselect-repo.conf 
-eselect repository add lto-overlay git https://github.com/InBetweenNames/gentooLTO.git 
 eselect repository add mez-overlay git https://github.com/KCIRREM/mez-overlay.git 
 echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf 
-emerge sys-config/ltoize 
 eselect profile list 
 ```
 select the dinit one 
@@ -88,7 +88,7 @@ emerge --ask --depclean
 ```
 set time zone 
 ```
-ln -sf ../usr/share/zoneinfo/Europe/London /etc/localtime 
+ln -sf /usr/share/zoneinfo/Europe/London /etc/localtime 
 ```
 set locale 
 ```
