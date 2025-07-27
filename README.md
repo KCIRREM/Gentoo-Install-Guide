@@ -62,7 +62,7 @@ Install Gentoo snapshot
 ```
 emerge-webrsync
 ```
-make.conf and and system profile stuff (including enabling lto) 
+make.conf, just use flags we will recompile everything with new cflags and lto later, I personally also like to use the mold linker so I will be reocmpiling everything after creating a kernel 
 ```
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
@@ -81,12 +81,7 @@ replace VIDEO_CARDS with your own
 echo "CPU_FLAGS_X86=\"$(cpuid2cpuflags | sed 's/.*://g')\"" >> /etc/portage/make.conf 
 echo -e 'ACCEPT_LICENSE="*"\nVIDEO_CARDS="amdgpu radeonsi nvidia"' 
 ```
-update world to reflect new profile 
-```
-emerge --ask --verbose --update --deep --changed-use @world 
-emerge --ask --depclean 
-```
-set time zone 
+Set timezone
 ```
 ln -sf /usr/share/zoneinfo/Europe/London /etc/localtime 
 ```
@@ -97,7 +92,11 @@ eselect locale list
 eselect locale set 4 
 env-update && source /etc/profile && export PS1="(chroot) ${PS1}" 
 ```
-
+update world to reflect new profile 
+```
+emerge --ask --verbose --update --deep --changed-use @world 
+emerge --ask --depclean 
+```
 I will be doing a manual kernel comp follow the wiki for distribution
 ```
 emerge --ask sys-fs/crypt-setup sys-fs/btrfs-progs app-arch/lz4
@@ -143,9 +142,3 @@ Install packages
 emerge -av iwd net-wireless/iwd sys-apps/dbus sys-auth/seatd net-misc/chrony net-misc/dhcpcd app-admin/sysklogd
 ```
 Reboot and you should have a working system
-
-
-
-
-
-
