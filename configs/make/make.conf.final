@@ -6,7 +6,7 @@ NTHREADS="8"
 
 source /etc/portage/make.conf.lto.defines
 
-CFLAGS="-march=native -O3 ${SEMINTERPOS} ${GRAPHITE} ${IPA} ${FLTO} -fuse-linker-plugin -pipe ${NOPLT}"
+CFLAGS="-march=native -O3 ${SEMINTERPOS} ${GRAPHITE} ${IPA} ${FLTO} -fuse-linker-plugin -pipe"
 CXXFLAGS="${CFLAGS}"
 LDFLAGS="${LDFLAGS} -O3 -fuse-ld=mold"
 FCFLAGS="${CFLAGS}"
