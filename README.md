@@ -62,7 +62,11 @@ Install Gentoo snapshot
 ```
 emerge-webrsync
 ```
-make.conf, just use flags we will recompile everything with new cflags and lto later, I personally also like to use the mold linker so I will be reocmpiling everything after creating a kernel 
+edit the make.conf, just use flags we will recompile everything with new cflags and lto later, I personally also like to use the mold linker so I will be reocmpiling everything after creating a kernel. \
+Here are mine for reference
+```
+USE="-systemd -X wayland pipewire vaapi pgo graphite lto -llvm -clang nvidia"
+```
 ```
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
