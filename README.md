@@ -59,7 +59,7 @@ source /etc/profile
 export PS1="(chroot) ${PS1}" 
 ```
 Install Gentoo snapshot
-``
+```
 emerge-webrsync
 ```
 make.conf and and system profile stuff (including enabling lto) 
