@@ -104,7 +104,7 @@ emerge --ask --depclean
 ```
 I will be doing a manual kernel comp follow the wiki for distribution
 ```
-emerge --ask sys-fs/crypt-setup sys-fs/btrfs-progs app-arch/lz4
+emerge --ask sys-fs/cryptsetup sys-fs/btrfs-progs app-arch/lz4
 emerge --ask sys-kernel/linux-firmware 
 emerge --ask sys-firmware/sof-firmware 
 emerge --ask sys-kernel/installkernel 
