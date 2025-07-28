@@ -22,6 +22,7 @@ play sound through you're speakers change the brighness
 ## Begin config
 ### Loaded Modules
 ```
+eselect kernel list set 1
 cd /usr/src/linux
 make defconfig
 make LSMOD=$HOME/.config/modprobed.db localmodconfig
