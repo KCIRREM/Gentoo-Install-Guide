@@ -112,7 +112,7 @@ emerge --ask sys-kernel/installkernel
 clone this repo and copy appropriate files into install kernel 
 ```
 git clone https://github.com/KCIRREM/Gentoo-Install-Guide.git 
-cp -r Gentoo-Install-Guide/configs/kernel/installkernel/ /etc/kernel/ 
+cp -r Gentoo-Install-Guide/configs/kernel/installkernel/* /etc/kernel/ 
 mkdir -p /efi/EFI/Gentoo 
 emerge --ask sys-kernel/gentoo-sources 
 ```
