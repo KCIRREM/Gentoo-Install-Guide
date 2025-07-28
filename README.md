@@ -67,6 +67,7 @@ Here are mine for reference
 ```
 USE="-systemd -X wayland pipewire vaapi pgo graphite lto -llvm -clang nvidia"
 ```
+preparing for the dinit profile
 ```
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
