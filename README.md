@@ -24,7 +24,7 @@ cd ../
 umount /mnt/gentoo 
 mount -o subvol=@,defaults,noatime,discard=async,compress-force=zstd:3 /dev/mapper/cryptroot /mnt/gentoo/
 cd /mnt/gentoo 
-mkdir ./{home,.snapshots,var,efi} 
+mkdir ./{swap,home,.snapshots,var,efi} 
 mkdir ./var/{cache,db,log,tmp} 
 mkdir ./var/db/repos 
 mount /dev/nvme0n1p1 /mnt/gentoo/efi 
