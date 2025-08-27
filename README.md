@@ -1,8 +1,8 @@
 # Gentoo-Install-Guide
 ## An encrypted Gentoo install with btrfs and subvolumes along withe efistub as the bootloader.
 
-500M, 19GB, rest is root \
-efi partiton, swap, luks on btrfs 
+512M, rest is root \
+efi partiton, luks on btrfs 
 
 format appropriately 
 setup passphrase 
@@ -16,9 +16,10 @@ cd /mnt/gentoo
 ```
 create subvols 
 ```
-btrfs subvol create {@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots} 
+btrfs subvol create {@swap,@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots}
+btrfs filesystem mkswapfile --size 64g --uuid clear @swap/swapfile
+swapon @swap/swapfile
 ```
-mount 
 ```
 cd ../ 
 umount /mnt/gentoo 
