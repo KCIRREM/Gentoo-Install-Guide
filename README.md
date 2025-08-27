@@ -72,7 +72,7 @@ preparing for the dinit profile
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
 mkdir /etc/portage/repos.conf 
-cat /usr/share/portage/cofig/repos.conf > /etc/portage/repos.conf/eselect-repo.conf 
+cat /usr/share/portage/config/repos.conf > /etc/portage/repos.conf/eselect-repo.conf 
 eselect repository add mez-overlay git https://github.com/KCIRREM/mez-overlay.git 
 echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf 
 eselect profile list 
