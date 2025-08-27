@@ -92,7 +92,8 @@ ln -sf /usr/share/zoneinfo/Europe/London /etc/localtime
 ```
 set locale 
 ```
-echo -e "en_GB ISO-8859-1\nen_GB.UTF-8 UTF-8" >> /etc/locale.gen 
+echo -e "en_GB ISO-8859-1\nen_GB.UTF-8 UTF-8" >> /etc/locale.gen
+locale-gen
 eselect locale list 
 eselect locale set 4 
 env-update && source /etc/profile && export PS1="(chroot) ${PS1}" 
