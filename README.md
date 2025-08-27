@@ -17,28 +17,27 @@ cd /mnt/gentoo
 create subvols 
 ```
 btrfs subvol create {@swap,@,@home,@tmp,@cache,@repos,@log,@binpkgs,@snapshots}
-btrfs filesystem mkswapfile --size 64g --uuid clear @swap/swapfile
-swapon @swap/swapfile
+btrfs filesystem mkswapfile --size 64g --uuid clear \@swap/swapfile
 ```
 ```
 cd ../ 
 umount /mnt/gentoo 
-mount -o defaults,noatime,compress-force=zstd,subvol=@ /dev/mapper/cryptroot /mnt/gentoo/ 
+mount -o subvol=@,defaults,noatime,discard=async,compress-force=zstd:3 /dev/mapper/cryptroot /mnt/gentoo/
 cd /mnt/gentoo 
 mkdir ./{home,.snapshots,var,efi} 
 mkdir ./var/{cache,db,log,tmp} 
 mkdir ./var/db/repos 
 mount /dev/nvme0n1p1 /mnt/gentoo/efi 
-mount -o defaults,noatime,compress-force=zstd,subvol=@home /dev/mapper/cryptroot /mnt/gentoo/home 
-mount -o defaults,noatime,compress-force=zstd,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots 
-mount -o defaults,noatime,compress-force=zstd,subvol=@tmp /dev/mapper/cryptroot /mnt/gentoo/var/tmp 
-mount -o defaults,noatime,compress-force=zstd,subvol=@log /dev/mapper/cryptroot /mnt/gentoo/var/log
-mount -o defaults,noatime,compress-force=zstd,subvol=@cache /dev/mapper/cryptroot /mnt/gentoo/var/cache 
-mount -o defaults,noatime,compress-force=zstd,subvol=@repos /dev/mapper/cryptroot /mnt/gentoo/var/db/repos 
+mount -o subvol=@home,defaults,noatime,discard=async,compress-force=zstd:3 /dev/mapper/cryptroot /mnt/gentoo/home
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@snapshots /dev/mapper/cryptroot /mnt/gentoo/.snapshots 
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@tmp /dev/mapper/cryptroot /mnt/gentoo/var/tmp 
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@log /dev/mapper/cryptroot /mnt/gentoo/var/log
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@cache /dev/mapper/cryptroot /mnt/gentoo/var/cache 
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@repos /dev/mapper/cryptroot /mnt/gentoo/var/db/repos
 mkdir /mnt/gentoo/var/cache/binpkgs
-mount -o defaults,noatime,compress-force=zstd,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs 
-mkswap /dev/nvme0n1p2 
-swapon /dev/nvme0n1p2 
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@binpkgs /dev/mapper/cryptroot /mnt/gentoo/var/cache/binpkgs
+mount -o defaults,noatime,discard=async,compress-force=zstd:3,subvol=@swap /dev/mapper/cryptroot /mnt/gentoo/swap
+swapon /mnt/gentoo/swap/swapfile
 ```
 download the tarball and extract it 
 ```
