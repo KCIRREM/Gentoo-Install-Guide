@@ -8,6 +8,7 @@ find_mdev()
     echo "/sbin/mdev"
   else
     echo "/bin/busybox mdev"
+  fi
 }
 
 populate_mdev()
