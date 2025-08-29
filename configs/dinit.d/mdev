@@ -2,5 +2,5 @@ type = scripted
 command = /etc/dinit.d/mdev.sh
 log-type = buffer
 restart = false
-option: starts-on-console
+options: starts-on-console
 depends-on: early-filesystems
