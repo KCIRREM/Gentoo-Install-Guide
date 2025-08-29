@@ -1,4 +1,4 @@
-# directory structure
+it# directory structure
 dir /proc       755 0 0
 dir /usr        755 0 0
 dir /usr/lib64  755 0 0
