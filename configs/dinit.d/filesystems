@@ -7,5 +7,5 @@ logfile = /var/log/dinit-filesystems.log
 start-timeout = 1200   # 20 minutes
 options: starts-on-console
 
-depends-on: mdev
+depends-on: mdevd
 waits-for: rootrw
