@@ -66,14 +66,15 @@ set makeopts
 ```
 MAKEOPTS="-j16"
 ```
-preparing for the dinit profile
+preparing for the dinit profile, enable my repo and guru for mdevd
 ```
 emerge --ask --oneshot app-portage/cpuid2cpuflags 
 emerge -aqv eselect-repository 
 mkdir /etc/portage/repos.conf 
 cat /usr/share/portage/config/repos.conf > /etc/portage/repos.conf/eselect-repo.conf 
 eselect repository add mez-overlay git https://github.com/KCIRREM/mez-overlay.git 
-echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf 
+echo "priority = 999" >> /etc/portage/repos.conf/eselect-repo.conf
+eselect repository enable 158
 eselect profile list 
 ```
 select the dinit one 
