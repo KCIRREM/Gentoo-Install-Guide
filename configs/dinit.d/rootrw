@@ -8,4 +8,4 @@ logfile = /run/rootrw.log
 options: starts-on-console
 
 depends-on : early-filesystems
-depends-on: mdev
+depends-on: mdevd
