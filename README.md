@@ -62,10 +62,9 @@ Install Gentoo snapshot
 ```
 emerge-webrsync
 ```
-edit the make.conf, just use flags we will recompile everything with new cflags and lto later, I personally also like to use the mold linker so I will be reocmpiling everything after creating a kernel. \
-Here are mine for reference
+set makeopts
 ```
-USE="-systemd -X wayland pipewire vaapi pgo graphite lto -llvm -clang nvidia"
+MAKEOPTS="-j16"
 ```
 preparing for the dinit profile
 ```
