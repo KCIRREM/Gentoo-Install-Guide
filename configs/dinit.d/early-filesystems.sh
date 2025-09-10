@@ -21,5 +21,9 @@ if [ "$1" = start ]; then
     # so we mount it and then remount:
     mount -n -t proc -o hidepid=1 proc /proc
     mount -n -t proc -o remount,hidepid=1 proc /proc
+    ln -snf /proc/self/fd /dev/fd
+    ln -snf fd/0 /dev/stdin
+    ln -snf fd/1 /dev/stdout
+    ln -snf fd/2 /dev/stderr
 
 fi
