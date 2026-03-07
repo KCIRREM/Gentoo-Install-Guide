@@ -327,7 +327,61 @@ make install
 ```
 
 ---
+## 9. Configuring the system
+We will first generate an fstab
+```bash
+emerge -av1 genfstab
+genfstab -U / > /etc/fstab
+```
+Here is an example one
+```bash
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/         	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@	0 0
 
+# /dev/nvme0n1p1
+UUID=9C13-92E1      	/efi      	vfat      	rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro	0 2
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/swap     	btrfs     	rw,noatime,ssd,discard=async,subvol=/@swap	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/home     	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@home	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/.snapshots	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@snapshots	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/var/log  	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@log	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/var/tmp  	btrfs     	rw,noatime,ssd,discard=async,subvol=/@tmp	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/var/cache	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@cache	0 0
+
+# /dev/mapper/cryptroot LABEL=gentoo
+UUID=10106d2a-6ece-4e69-91bf-9a06c420105f	/var/db/repos	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@repos	0 0
+
+/swap/swapfile      	none      	swap      	defaults  	0 0
+```
+Set the hostname & and install network uilities
+```
+echo "gen" > /etc/hostname
+emerge net-misc/dhcpcd net-wireless/iwd net-misc/chrony
+dinitctl enable dhcpd
+```
+---
+## System Configuration
+```
+passwd
+```
+---
+## System Utilities
+```
+emerge syslog-ng fcron sys-apps/mlocate app-shells/bash-completion chrony
+```
+
+---
 ## 8. Bootstrapping Rust & Java
 
 Gentoo does not provide prebuilt Rust or Java packages for musl + LLVM systems, which creates a circular dependency — many packages need Rust or Java to build, but Rust and Java themselves need to be compiled first. The solution is to build them in a temporary musl libstdc++-based chroot, then switch profiles and rebuild them with libcxx to produce binary packages, and then install those into the main system. This approach is based on the [Gentoo Wiki's guide to bootstrapping Rust via stage file](https://wiki.gentoo.org/wiki/Bootstrapping_Rust_via_stage_file).
