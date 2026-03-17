@@ -246,9 +246,6 @@ dri/card[0-9]*  root:video 660
 dri/renderD[0-9]*   root:video 660
 EOF
 ```
-
-> ℹ️ When you create your user in Section 12, add them to the `audio`, `video`, `input`, and `usb` groups so they inherit these permissions.
-
 ---
 
 ## 5. Profiles, Locales & Timezones
