@@ -140,6 +140,11 @@ cryptsetup luksOpen /dev/nvme0n1p2 cryptroot
 mkfs.btrfs -L gentoo /dev/mapper/cryptroot
 ```
 
+> ℹ️ **LUKS recovery key:** It is strongly recommended to add a backup recovery key immediately after formatting, before you have any data to lose. Store it somewhere safe (printed, on a separate encrypted device, etc.):
+> ```bash
+> cryptsetup luksAddKey /dev/nvme0n1p2
+> ```
+
 ### 2.5 Create Btrfs Subvolumes
 
 ```bash
@@ -176,7 +181,7 @@ mount -o ${BTRFS_OPTS},subvol=@games                     /dev/mapper/cryptroot /
 chattr +C /mnt/gentoo/var/tmp/
 chattr +C /mnt/gentoo/swap
 
-# Create the swapfile or potentailly use zram
+# Create the swapfile or potentially use zram
 btrfs filesystem mkswapfile --size 16g --uuid clear /mnt/gentoo/swap/swapfile
 swapon /mnt/gentoo/swap/swapfile
 ```
@@ -272,6 +277,7 @@ echo 'MUSL_LOCPATH="/usr/share/i18n/locales/musl"' > /etc/env.d/00local
 echo 'TZ="/usr/share/zoneinfo/Europe/London"' >> /etc/env.d/00local
 source /etc/profile
 
+# Set musl locale
 eselect locale list
 eselect locale set <N>
 env-update && source /etc/profile && export PS1="(chroot) ${PS1}"
@@ -297,6 +303,10 @@ emerge --depclean
 ---
 
 ## 6. Make.conf & World Rebuild
+
+> 🟨 **Nvidia GPU users:** The proprietary Nvidia driver does not support musl and cannot be used on this system:
+> - **NVK + Zink** — Mesa's open-source Nouveau-based Vulkan driver, with OpenGL translated through Zink. Set `VIDEO_CARDS="nouveau nvk zink"` and add `vulkan` to your USE flags. You should also accept the unstable keyword for `media-libs/mesa` — see [Section 14](#14-graphics--mesa-drivers) for instructions.
+> - **Proprietary Drivers & Flatpak** — Alongside NVK and Zink you could also run games and apps in a Flatpak sandbox that bundles its own glibc-based runtime, sidestepping the musl incompatibility. You would need to install the nividia kernel modules alongside nouveau and switch between them depending on the use case - I have not yet tested this
 
 Layer your optimised flags on top and do a full rebuild.
 
@@ -335,7 +345,7 @@ GENTOO_MIRRORS="https://mirrors.gethosted.online/gentoo/ \
     https://www.mirrorservice.org/sites/distfiles.gentoo.org/ \
     rsync://rsync.mirrorservice.org/distfiles.gentoo.org/"
 
-MAKEOPTS="-j16"   # set to nproc, or nproc-1 if the system becomes unusable during builds
+MAKEOPTS="-j$(nproc)"
 ACCEPT_LICENSE="*"
 
 # Set to match your GPU
@@ -346,10 +356,6 @@ CPU_FLAGS_X86="aes avx avx2 bmi1 bmi2 f16c fma3 mmx mmxext pclmul popcnt rdrand 
 
 USE="-systemd -X wayland pipewire vaapi dbus -elogind seatd -logind"
 ```
-
-> 🟨 **Nvidia GPU users:** The proprietary Nvidia driver does not support musl and cannot be used on this system. You have two options — see [Section 14](#nvidia-gaming-on-musl) for details on what each involves:
-> - **NVK + Zink** — Mesa's open-source Nouveau-based Vulkan driver, with OpenGL translated through Zink. Set `VIDEO_CARDS="nouveau nvk zink"` and add `vulkan` to your USE flags. You should also accept the unstable keyword for `media-libs/mesa` — see the [Mesa Drivers](#graphics-mesa-drivers) section for instructions.
-> - **Flatpak** — Run games and apps in a Flatpak sandbox that bundles its own glibc-based runtime, sidestepping the musl incompatibility entirely. The simplest path if you just want things to work.
 
 Rebuild the world with the new flags. This is a good one to kick off before sleeping:
 
@@ -392,7 +398,7 @@ make -j$(nproc) modules_install
 make install
 ```
 
-> ℹ️ `ugrd` is invoked automatically by `installkernel` after `make install` — it handles both initramfs generation and LUKS/cryptsetup integration. No separate dracut or mkinitcpio step is needed.
+> ℹ️ `ugrd` is invoked automatically by `installkernel` after `make install` — it handles both initramfs generation and LUKS/cryptsetup integration by detecting what is currently mounted. No separate dracut or mkinitcpio step is needed.
 
 ---
 
@@ -561,6 +567,7 @@ sed -i 's/^manage_rundir = no/manage_rundir = yes/' /etc/turnstile/turnstiled.co
 ln -sr /usr/lib/dinit.d/seatd                /usr/lib/dinit.d/boot.d/
 ln -sr /etc/dinit.d/turnstiled               /usr/lib/dinit.d/boot.d/
 ```
+
 ### 10.4 PAM Configuration
 
 Turnstile hooks into PAM to open and close sessions. Ensure `pam_turnstile.so` is included in your login PAM stack. Check `/etc/pam.d/login` — if it sources a common session file you may only need to add it there:
@@ -574,9 +581,11 @@ session  optional  pam_turnstile.so
 
 ---
 
-## 11. Bootstrapping Rust & Java  
+## 11. Bootstrapping Rust & Java
 
-Gentoo doesn't provide prebuilt Rust or Java packages for musl + LLVM systems. This creates a circular dependency — many packages need Rust or Java to build, but those runtimes must themselves be compiled. The solution is to build them in a temporary musl chroot using libstdc++, produce binary packages, then install those into the main system.
+Gentoo doesn't provide prebuilt Rust or Java packages for musl + LLVM systems. This creates a circular dependency — many packages need Rust or Java to build, but those runtimes must themselves be compiled from source.
+
+The solution is a two-stage bootstrap: first build Rust and Java inside a temporary musl chroot that uses `libstdc++` and then change the profile to use `libcxx` (avoids the circular dependency) and produce binary packages from that chroot, then install those binaries into the main system. Once installed, they are rebuilt a second time with the main system's optimised flags.
 
 This approach follows the [Gentoo Wiki's bootstrapping Rust via stage file](https://wiki.gentoo.org/wiki/Bootstrapping_Rust_via_stage_file).
 
@@ -587,7 +596,7 @@ emerge fakeroot
 mkdir ~/gentoo-rootfs
 
 # Update this URL to the latest musl openrc stage3 from https://www.gentoo.org/downloads/
-STAGE3_URL="https://distfiles.gentoo.org/releases/amd64/autobuilds/20260302T174559Z/stage3-amd64-musl-openrc-20260302T174559Z.tar.xz"
+STAGE3_URL="https://distfiles.gentoo.org/releases/amd64/autobuilds/current-stage3-amd64-musl-openrc/stage3-amd64-musl-openrc-<YYYYMMDDTHHMMSSZ>.tar.xz"
 wget -P ~/gentoo-rootfs "${STAGE3_URL}"
 
 cd ~/gentoo-rootfs
@@ -619,8 +628,10 @@ emerge llvm-core/clang llvm-core/llvm llvm-runtimes/compiler-rt \
        llvm-runtimes/libunwind llvm-core/lld \
        dev-lang/rust dev-java/openjdk
 
-# Switch to the musl/llvm profile — adjust to the current profile name
-eselect profile set default/linux/amd64/23.0/musl/llvm
+# Switch to the musl/llvm profile — run 'eselect profile list' to find the
+# current name, as profile names change between Gentoo releases
+eselect profile list
+eselect profile set <N>   # select the musl/llvm profile
 source /etc/profile
 
 # Now rebuild the LLVM stack against libcxx
@@ -664,7 +675,7 @@ umount -R ~/gentoo-rootfs/{proc,sys,dev,run}
 
 ### 11.6 Rebuild with Optimised Flags
 
-Rust manages its own LTO pipeline, so it must be rebuilt without our rust lto flags.
+Rust manages its own LTO pipeline internally via the `lto` USE flag. The `RUSTFLAGS` in `make.conf` handle linker-level LTO (passing `-Clinker-plugin-lto` to the Clang linker), while the `lto` USE flag tells Cargo to enable LTO across Rust crates. These two are complementary and should both be set, but the `no-lto.conf` env file strips the C/C++ LTO flags from the compiler environment to avoid conflicts with Rust's own pipeline:
 
 ```bash
 mkdir -p /etc/portage/env
@@ -763,10 +774,12 @@ doas dmesg | tail -20  # check for any hardware errors
 
 ## 14. Graphics — Mesa Drivers
 
-Mesa provides the OpenGL and Vulkan drivers for AMD, Intel, and Nvidia. Assuming `VIDEO_CARDS` has been set correctly and you are not using nvidia proceed with intstalling mesa else read the NVIDIA section below
+Mesa provides the OpenGL and Vulkan drivers for AMD, Intel, and Nvidia. Assuming `VIDEO_CARDS` has been set correctly and you are not using Nvidia, proceed with installing Mesa:
+
 ```bash
 emerge media-libs/mesa
 ```
+
 #### Nvidia — NVK, Zink, and the proprietary driver
 
 The proprietary Nvidia driver is glibc-only and cannot run on musl. The open-source path is NVK + Zink:
@@ -800,7 +813,7 @@ emerge sys-apps/flatpak
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 ```
 
-Install the Nvidia runtime extension matching your driver version, then install games through Flathub as normal. NVK and Flatpak are not mutually exclusive — use NVK for native apps and Flatpak where the proprietary driver is needed.
+Flatpak handles the musl incompatibility for userspace, but switching between Nouveau and the proprietary Nvidia kernel module still requires blacklisting one at boot — they cannot be loaded simultaneously. This path has not been tested and is not a supported configuration in this guide.
 
 > ℹ️ As of 2025, NVK handles Vulkan-native titles well. OpenGL through Zink carries some overhead and occasional compatibility issues. Ray tracing and DLSS are not available. Check [Phoronix](https://www.phoronix.com) for benchmarks against your GPU generation.
 
@@ -877,6 +890,13 @@ User services live under `~/.config/dinit.d/`. Create the directory and write th
 mkdir -p ~/.config/dinit.d ~/.local/state/dinit
 ```
 
+D-Bus is required by PipeWire and WirePlumber. Enable the user D-Bus service by symlinking it into the user `boot.d` so it starts automatically on login:
+
+```bash
+mkdir -p ~/.config/dinit.d/boot.d
+ln -sr /etc/dinit.d/user/dbus ~/.config/dinit.d/boot.d/dbus
+```
+
 **`~/.config/dinit.d/pipewire`**
 ```
 type            = process
@@ -897,6 +917,10 @@ depends-on      = pipewire
 
 For your Wayland compositor, substitute `niri` with whichever compositor you are using. The key points are that it triggers `graphical.target` on start and depends on both `graphical.monitor` and `pipewire`:
 
+```bash
+emerge gui-wm/niri   # substitute your compositor of choice
+```
+
 **`~/.config/dinit.d/niri`** (substitute your compositor)
 ```
 type            = process
@@ -910,11 +934,11 @@ depends-on      = pipewire
 Enable the services by symlinking them into the user `boot.d` directory so they start automatically on login:
 
 ```bash
-mkdir -p ~/.config/dinit.d/boot.d
 cd ~/.config/dinit.d
 ln -sr wireplumber boot.d/
 ln -sr niri boot.d/        # substitute your compositor name
 ```
+
 Verify audio is working after logging in:
 
 ```bash
@@ -932,9 +956,6 @@ echo "www-client/firefox -telemetry system-pipewire" > /etc/portage/package.use/
 emerge dev-libs/libatomic-stub
 emerge www-client/firefox
 ```
-
-> ⚠️ Without `libatomic-stub`, Firefox's build dependencies will pull in `sys-devel/gcc`. On a musl + LLVM system this is something you want to avoid — it bloats the system and can introduce subtle ABI complications. Installing the stub satisfies the `libatomic` requirement without needing GCC itself.
-
 ---
 
 ## Contributing
