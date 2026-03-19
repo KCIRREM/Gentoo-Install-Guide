@@ -386,6 +386,7 @@ echo "sys-kernel/cachyos-sources ~amd64" > /etc/portage/package.accept_keywords/
 echo "sys-kernel/cachyos-sources -autofdo -propeller" > /etc/portage/package.use/cachyos-sources
 mkdir -p /efi/EFI/Gentoo
 emerge sys-kernel/cachyos-sources
+eselect kernel set 1
 ```
 
 Build and install. Run `make LLVM=1 LLVM_IAS=1 nconfig` first if you want to customise the config:
@@ -618,7 +619,7 @@ mount --bind /run ~/gentoo-rootfs/run && mount --make-slave ~/gentoo-rootfs/run
 ```bash
 cat << 'EOF' > ~/gentoo-rootfs/bootstrap.sh
 #!/bin/bash
-set -euo pipefail
+set -eo pipefail
 source /etc/profile
 
 emerge-webrsync
@@ -630,9 +631,8 @@ emerge llvm-core/clang llvm-core/llvm llvm-runtimes/compiler-rt \
 
 # Switch to the musl/llvm profile — run 'eselect profile list' to find the
 # current name, as profile names change between Gentoo releases
-eselect profile list
 eselect profile set <N>   # select the musl/llvm profile
-source /etc/profile
+env-update && source /etc/profile
 
 # Now rebuild the LLVM stack against libcxx
 emerge llvm-runtimes/clang-runtime
