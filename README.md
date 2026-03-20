@@ -9,19 +9,32 @@ Targets **x86_64**, **UEFI boot**, **dinit**, and a **musl + LLVM/Clang** toolch
 
 ## Table of Contents
 
+**Phase 1 — Live Environment & Disk**
 1. [Preparation & Booting](#1-preparation--booting)
 2. [Disk Partitioning](#2-disk-partitioning)
+
+**Phase 2 — Base System**
+
 3. [Stage 3 & Portage](#3-stage-3--portage)
 4. [Chroot & Base Config](#4-chroot--base-config)
 5. [Profiles, Locales & Timezones](#5-profiles-locales--timezones)
 6. [Make.conf & World Rebuild](#6-makeconf--world-rebuild)
-7. [Bootloader & Kernel](#7-bootloader--kernel)
-8. [System Configuration](#8-system-configuration)
-9. [System Utilities](#9-system-utilities)
-10. [Seat Management](#10-seat-management)
-11. [Bootstrapping Rust & Java](#11-bootstrapping-rust--java)
-12. [User Setup & Privilege Escalation](#12-user-setup--privilege-escalation)
-13. [Final Steps & First Boot](#13-final-steps--first-boot)
+7. [Bootstrapping Rust & Java](#7-bootstrapping-rust--java)
+
+**Phase 3 — Boot & Core System**
+
+8. [Bootloader & Kernel](#8-bootloader--kernel)
+9. [System Configuration](#9-system-configuration)
+10. [System Utilities](#10-system-utilities)
+
+**Phase 4 — Users & First Boot**
+
+11. [User Setup & Privilege Escalation](#11-user-setup--privilege-escalation)
+12. [Final Steps & First Boot](#12-final-steps--first-boot)
+
+**Phase 5 — Desktop Stack**
+
+13. [Seat Management](#13-seat-management)
 14. [Graphics — Mesa Drivers](#14-graphics--mesa-drivers)
 15. [Audio — PipeWire & WirePlumber](#15-audio--pipewire--wireplumber)
 16. [Browser — Firefox](#16-browser--firefox)
@@ -53,6 +66,8 @@ for easy snapshotting.
 
 ---
 
+# Phase 1 — Live Environment & Disk
+
 ## 1. Preparation & Booting
 
 ### 1.1 Download the Installation Media
@@ -62,8 +77,6 @@ Gentoo can be installed from any live Linux environment. **Linux Mint** is a goo
 https://www.linuxmint.com/download.php
 
 Download the latest **Cinnamon** edition. The desktop choice doesn't matter since we're just using it as a launchpad.
-
-> ℹ️ If you're already on a Linux system, you can skip the live USB and work from your existing install.
 
 ### 1.2 Write to USB
 
@@ -193,6 +206,8 @@ lsblk
 
 ---
 
+# Phase 2 — Base System
+
 ## 3. Stage 3 & Portage
 
 Navigate to the [Gentoo downloads page](https://www.gentoo.org/downloads/amd64/#stages-advanced) and grab the **musl llvm** stage 3 tarball, then move it into `/mnt/gentoo`.
@@ -232,25 +247,6 @@ mkdir /etc/portage/repos.conf
 cp /usr/share/portage/config/repos.conf /etc/portage/repos.conf/gentoo.conf
 ```
 
-### 4.1 Configure mdev.conf
-
-mdevd uses a rules file to handle device node creation and permissions. Rather than writing one from scratch, we use the comprehensive example config maintained by the BusyBox project as a base, then append rules for DRI render nodes which it doesn't cover.
-
-```bash
-wget -O /etc/mdev.conf https://git.busybox.net/busybox/plain/examples/mdev_fat.conf
-```
-
-The BusyBox config handles the common cases well but doesn't include rules for DRI render nodes (`renderD*`), which are needed for GPU access from Wayland compositors and Vulkan. Append them after the existing video card entries:
-
-```bash
-cat << 'EOF' >> /etc/mdev.conf
-
-# DRI render nodes — needed for Wayland compositors and Vulkan
-renderD[0-9]*   root:video 660 =dri/
-dri/card[0-9]*  root:video 660
-dri/renderD[0-9]*   root:video 660
-EOF
-```
 ---
 
 ## 5. Profiles, Locales & Timezones
@@ -354,18 +350,230 @@ VIDEO_CARDS="amdgpu radeonsi"
 # Paste the output of cpuid2cpuflags here
 CPU_FLAGS_X86="aes avx avx2 bmi1 bmi2 f16c fma3 mmx mmxext pclmul popcnt rdrand sha sse sse2 sse3 sse4_1 sse4_2 sse4a ssse3"
 
-USE="-systemd -X wayland pipewire vaapi dbus -elogind seatd -logind"
+USE="-systemd -X wayland pipewire vaapi dbus vulkan -elogind seatd -logind"
 ```
 
-Rebuild the world with the new flags. This is a good one to kick off before sleeping:
-
-```bash
-emerge -e1 @world
-```
+> ℹ️ ℹ️ With the optimised flags set, the next step is a full system rebuild followed immediately by the Rust and Java bootstrap — both are long so it makes sense to chain them and leave them unattended. The following section documents the bootstrap process in full and provides a complete script at Section 7.8 to run everything in one go.
 
 ---
 
-## 7. Bootloader & Kernel
+## 7. Bootstrapping Rust & Java
+
+Gentoo doesn't provide prebuilt Rust or Java packages for musl + LLVM systems. This creates a circular dependency — many packages need Rust or Java to build, but those runtimes must themselves be compiled from source.
+
+The bootstrap resolves this in four stages:
+
+1. **Build against libstdc++** — Gentoo provides minimal musl + libstdc++ binaries specifically to break the circular dependency. These are used inside the bootstrap chroot to build Rust, Java, and the LLVM stack against libstdc++, which has no circular dependency issues.
+2. **Switch to libcxx and rebuild the toolchain** — the profile is switched to musl/llvm and the full LLVM toolchain is rebuilt against libcxx. libstdc++ remains available on the system for compatibility — the goal is to gain the ability to link new software against libcxx, not to remove libstdc++.
+3. **Produce libcxx-linked binaries** — Rust and Java are built again, this time linking against libcxx, and packaged as binpkgs.
+4. **Install into the main system** — those binpkgs are copied out of the bootstrap chroot and installed into the main system with `--usepkg`, then rebuilt a final time with the main system's optimised flags.
+
+This approach follows the [Gentoo Wiki's bootstrapping Rust via stage file](https://wiki.gentoo.org/wiki/Bootstrapping_Rust_via_stage_file).
+
+> ℹ️ A complete script covering all steps below is provided at the end of this section. Read through the steps first to understand what it does, then use the script to run everything unattended — optionally chained after the world rebuild from Section 6.
+
+### 7.1 Set Up the Bootstrap Chroot
+
+Install `fakeroot` and create the chroot directory, then download the latest musl openrc stage3 tarball from [the Gentoo downloads page](https://www.gentoo.org/downloads/) and extract it:
+
+```bash
+emerge fakeroot
+mkdir ~/gentoo-rootfs
+
+# Update this URL to the latest musl openrc stage3 from https://www.gentoo.org/downloads/
+STAGE3_URL="https://distfiles.gentoo.org/releases/amd64/autobuilds/current-stage3-amd64-musl-openrc/stage3-amd64-musl-openrc-<YYYYMMDDTHHMMSSZ>.tar.xz"
+wget -P ~/gentoo-rootfs "${STAGE3_URL}"
+
+cd ~/gentoo-rootfs
+fakeroot tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
+cp --dereference /etc/resolv.conf ~/gentoo-rootfs/etc/
+```
+
+Bind-mount the virtual filesystems into the chroot:
+
+```bash
+mount --types proc /proc ~/gentoo-rootfs/proc
+mount --rbind /sys ~/gentoo-rootfs/sys && mount --make-rslave ~/gentoo-rootfs/sys
+mount --rbind /dev ~/gentoo-rootfs/dev && mount --make-rslave ~/gentoo-rootfs/dev
+mount --bind /run ~/gentoo-rootfs/run && mount --make-slave ~/gentoo-rootfs/run
+```
+
+### 7.2 Stage 1 — Build Against libstdc++
+
+Enter the chroot and sync Portage, then build the LLVM toolchain, Rust, and Java against libstdc++. This avoids the circular dependency since the minimal stage3 binaries provide everything needed to get started:
+
+```bash
+chroot ~/gentoo-rootfs /bin/bash
+source /etc/profile
+emerge-webrsync
+
+emerge llvm-core/clang llvm-core/llvm llvm-runtimes/compiler-rt \
+       llvm-runtimes/libunwind llvm-core/lld \
+       dev-lang/rust dev-java/openjdk
+```
+
+### 7.3 Stage 2 — Switch to libcxx and Rebuild the Toolchain
+
+Switch to the musl/llvm profile and rebuild the full LLVM stack against libcxx. libstdc++ is not removed — it remains available for compatibility:
+
+```bash
+# Run 'eselect profile list' to find the current name — profile names change between releases
+eselect profile set <N>
+env-update && source /etc/profile
+
+emerge llvm-runtimes/clang-runtime
+emerge llvm-core/clang llvm-core/llvm \
+       llvm-runtimes/libcxx llvm-runtimes/libcxxabi \
+       llvm-runtimes/compiler-rt llvm-runtimes/compiler-rt-sanitizers \
+       llvm-runtimes/libunwind llvm-core/lld
+```
+
+### 7.4 Stage 3 — Produce libcxx-linked Binpkgs
+
+Build Rust and Java again, this time linking against libcxx, and package them as binary packages for installation into the main system:
+
+```bash
+emerge --buildpkg dev-lang/rust dev-java/openjdk
+exit   # leave the bootstrap chroot
+```
+
+### 7.5 Install Binary Packages into the Main System
+
+Copy the binary packages out of the bootstrap chroot and install them:
+
+```bash
+[ -d /var/cache/binpkgs ] && mv /var/cache/binpkgs /var/cache/binpkgs.bak
+cp -r ~/gentoo-rootfs/var/cache/binpkgs /var/cache/binpkgs
+
+emerge --usepkg dev-lang/rust dev-java/openjdk
+```
+
+### 7.6 Unmount the Bootstrap Chroot
+
+```bash
+umount -R ~/gentoo-rootfs/{proc,sys,dev,run}
+```
+
+### 7.7 Rebuild with Optimised Flags
+
+Rust manages its own LTO pipeline internally via the `lto` USE flag. The `RUSTFLAGS` in `make.conf` handle linker-level LTO (passing `-Clinker-plugin-lto` to the Clang linker), while the `lto` USE flag tells Cargo to enable LTO across Rust crates. These two are complementary and should both be set, but the `no-lto.conf` env file strips the C/C++ LTO flags from the compiler environment to avoid conflicts with Rust's own pipeline:
+
+```bash
+mkdir -p /etc/portage/env
+
+cat << 'EOF' > /etc/portage/env/no-lto.conf
+COMMON_FLAGS="-O3 -pipe -march=native -fno-semantic-interposition -fno-common"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS}"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+RUSTFLAGS="-C target-cpu=native -C strip=debuginfo -C opt-level=3 -Clinker=clang -Clink-arg=-fuse-ld=lld"
+EOF
+
+echo "dev-lang/rust no-lto.conf" > /etc/portage/package.env
+echo "dev-lang/rust lto" > /etc/portage/package.use/rust
+
+emerge dev-lang/rust dev-java/openjdk
+```
+
+### 7.8 Complete Bootstrap Script
+
+The script below covers everything from Section 7.1 onward. Before running it, update `STAGE3_URL` to match the filename, and set `MUSL_LLVM_PROFILE` to the correct profile number from `eselect profile list`.
+
+```bash
+cat << 'SCRIPT' > ~/bootstrap-full.sh
+#!/bin/bash
+set -eo pipefail
+
+# ── Configuration ────────────────────────────────────────────────────────────
+ROOTFS=~/gentoo-rootfs
+STAGE3_URL=
+# Set this to the profile number for the musl/llvm profile (eselect profile list)
+MUSL_LLVM_PROFILE=<N>
+# ─────────────────────────────────────────────────────────────────────────────
+
+echo ">>> Setting up bootstrap chroot..."
+emerge fakeroot
+mkdir -p "${ROOTFS}"
+
+cd "${ROOTFS}"
+wget $STAGE3_URL
+fakeroot tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
+cp --dereference /etc/resolv.conf "${ROOTFS}/etc/"
+
+echo ">>> Mounting virtual filesystems..."
+mount --types proc /proc "${ROOTFS}/proc"
+mount --rbind /sys "${ROOTFS}/sys" && mount --make-rslave "${ROOTFS}/sys"
+mount --rbind /dev "${ROOTFS}/dev" && mount --make-rslave "${ROOTFS}/dev"
+mount --bind /run "${ROOTFS}/run" && mount --make-slave "${ROOTFS}/run"
+
+echo ">>> Writing inner bootstrap script..."
+cat << EOF > "${ROOTFS}/run-bootstrap.sh"
+#!/bin/bash
+set -eo pipefail
+source /etc/profile
+
+echo ">>> Stage 1: syncing Portage and building against libstdc++..."
+emerge-webrsync
+emerge llvm-core/clang llvm-core/llvm llvm-runtimes/compiler-rt \\
+       llvm-runtimes/libunwind llvm-core/lld \\
+       dev-lang/rust dev-java/openjdk
+
+echo ">>> Stage 2: switching to musl/llvm profile and rebuilding toolchain against libcxx..."
+eselect profile set ${MUSL_LLVM_PROFILE}
+env-update && source /etc/profile
+
+emerge llvm-runtimes/clang-runtime
+emerge llvm-core/clang llvm-core/llvm \\
+       llvm-runtimes/libcxx llvm-runtimes/libcxxabi \\
+       llvm-runtimes/compiler-rt llvm-runtimes/compiler-rt-sanitizers \\
+       llvm-runtimes/libunwind llvm-core/lld
+
+echo ">>> Stage 3: producing libcxx-linked binpkgs..."
+emerge --buildpkg dev-lang/rust dev-java/openjdk
+EOF
+chmod +x "${ROOTFS}/run-bootstrap.sh"
+
+echo ">>> Running bootstrap inside chroot..."
+chroot "${ROOTFS}" /bin/bash /run-bootstrap.sh
+
+echo ">>> Installing binary packages into main system..."
+[ -d /var/cache/binpkgs ] && mv /var/cache/binpkgs /var/cache/binpkgs.bak
+cp -r "${ROOTFS}/var/cache/binpkgs" /var/cache/binpkgs
+emerge --usepkg dev-lang/rust dev-java/openjdk
+
+echo ">>> Unmounting bootstrap chroot..."
+umount -R "${ROOTFS}/proc" "${ROOTFS}/sys" "${ROOTFS}/dev" "${ROOTFS}/run"
+
+echo ">>> Configuring portage env and rebuilding with optimised flags..."
+mkdir -p /etc/portage/env
+cat << 'ENVEOF' > /etc/portage/env/no-lto.conf
+COMMON_FLAGS="-O3 -pipe -march=native -fno-semantic-interposition -fno-common"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS}"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+RUSTFLAGS="-C target-cpu=native -C strip=debuginfo -C opt-level=3 -Clinker=clang -Clink-arg=-fuse-ld=lld"
+ENVEOF
+
+echo "dev-lang/rust no-lto.conf" > /etc/portage/package.env
+echo "dev-lang/rust lto" > /etc/portage/package.use/rust
+
+emerge dev-lang/rust dev-java/openjdk
+
+echo ">>> Bootstrap complete."
+SCRIPT
+chmod +x ~/bootstrap-full.sh
+```
+Run bootstrap and remerge world
+```bash
+emerge -e1 @world && bash ~/bootstrap-full.sh
+```
+---
+
+# Phase 3 — Boot & Core System
+
+## 8. Bootloader & Kernel
 
 This guide uses efistub via `ugrd` for a minimal boot setup. For GRUB or other bootloaders, refer to the [Gentoo Wiki](https://wiki.gentoo.org).
 
@@ -375,7 +583,7 @@ emerge sys-fs/cryptsetup sys-fs/btrfs-progs app-arch/lz4 \
     sys-kernel/linux-firmware sys-firmware/sof-firmware \
     sys-kernel/installkernel
 
-echo "musl_libc = true" > /etc/ugrd/config.toml
+echo "musl_libc = true" >> /etc/ugrd/config.toml
 ```
 
 This guide uses CachyOS kernel sources. Substitute `cachyos-sources` with `gentoo-sources` and skip the keyword/USE entries if you prefer the standard kernel:
@@ -389,11 +597,11 @@ emerge sys-kernel/cachyos-sources
 eselect kernel set 1
 ```
 
-Build and install. Run `make LLVM=1 LLVM_IAS=1 nconfig` first if you want to customise the config:
+Build and install. It is highly recommened to configure the kernel manually:
 
 ```bash
 cd /usr/src/linux
-make LLVM=1 LLVM_IAS=1 olddefconfig
+make LLVM=1 LLVM_IAS=1 nconfig
 make LLVM=1 LLVM_IAS=1 -j$(nproc)
 make -j$(nproc) modules_install
 make install
@@ -403,9 +611,9 @@ make install
 
 ---
 
-## 8. System Configuration
+## 9. System Configuration
 
-### 8.1 Fstab
+### 9.1 Fstab
 
 ```bash
 emerge -av1 genfstab
@@ -432,7 +640,7 @@ UUID=<uuid>   /efi           vfat    rw,relatime,fmask=0022,dmask=0022,codepage=
 /swap/swapfile   none   swap   defaults   0 0
 ```
 
-### 8.2 Hostname & Network
+### 9.2 Hostname & Network
 
 We're not using udev, so NetworkManager isn't an option here. `dhcpcd` handles wired; `iwd` handles Wi-Fi.
 
@@ -448,15 +656,32 @@ ln -sr /usr/lib/dinit.d/dhcpcd /usr/lib/dinit.d/boot.d/
 ln -sr /usr/lib/dinit.d/iwd /usr/lib/dinit.d/boot.d/
 ```
 
-### 8.3 Root Password
+### 9.3 Root Password
 
 ```bash
 passwd
 ```
 
+### 9.4 Configure mdev.conf
+
+mdevd uses a rules file to handle device node creation and permissions. Rather than writing one from scratch, we use the comprehensive example config maintained by the BusyBox project as a base, then append rules for DRI render nodes which it doesn't cover.
+
+```bash
+wget -O /etc/mdev.conf https://git.busybox.net/busybox/plain/examples/mdev_fat.conf
+```
+
+The BusyBox config handles the common cases well but doesn't include rules for DRI render nodes (`renderD*`), which are needed for GPU access from Wayland compositors and Vulkan. Append them after the existing video card entries `nano /etc/mdev.conf`:
+
+```bash
+# DRI render nodes — needed for Wayland compositors and Vulkan
+renderD[0-9]*   root:video 660 =dri/
+dri/card[0-9]*  root:video 660
+dri/renderD[0-9]*   root:video 660
+```
+
 ---
 
-## 9. System Utilities
+## 10. System Utilities
 
 Install and enable a basic set of system utilities:
 
@@ -532,189 +757,25 @@ What each package provides:
 
 ---
 
-## 10. Seat Management
+# Phase 4 — Users & First Boot
 
-A seat manager arbitrates access to input and graphics hardware for unprivileged Wayland compositors and display servers. Without one, starting a compositor as a regular user will fail — it cannot open DRM or input devices directly.
+## 11. User Setup & Privilege Escalation
 
-This guide does not use `elogind`. Instead it uses two complementary components:
-
-- **seatd** — a minimal, standalone seat management daemon
-- **turnstile** — a session/user service tracker from Chimera Linux that integrates with dinit and manages per-user service instances (including launching user-level dinit for PipeWire, WirePlumber, etc.)
-
-Together they cover what `elogind` would otherwise provide, without pulling in large chunks of the systemd codebase.
-
-### 10.1 Install seatd and turnstile
-
-seatd needs the `builtin server` USE flag to enable its built-in server, which is required for unprivileged compositor startup:
+### 11.1 Create a User Account
 
 ```bash
-echo "sys-auth/seatd builtin server" > /etc/portage/package.use/seatd
-echo "sys-auth/turnstile ~amd64" > /etc/portage/package.accept_keywords/turnstile
-
-emerge sys-auth/seatd sys-auth/turnstile
-```
-
-### 10.2 Configure turnstiled
-
-Turnstile needs to manage the user runtime directory. Edit `/etc/turnstile/turnstiled.conf`:
-
-```bash
-sed -i 's/^manage_rundir = no/manage_rundir = yes/' /etc/turnstile/turnstiled.conf
-```
-
-### 10.3 Enable the Services
-
-```bash
-ln -sr /usr/lib/dinit.d/seatd                /usr/lib/dinit.d/boot.d/
-ln -sr /etc/dinit.d/turnstiled               /usr/lib/dinit.d/boot.d/
-```
-
-### 10.4 PAM Configuration
-
-Turnstile hooks into PAM to open and close sessions. Ensure `pam_turnstile.so` is included in your login PAM stack. Check `/etc/pam.d/login` — if it sources a common session file you may only need to add it there:
-
-```
-# /etc/pam.d/login  (or /etc/pam.d/system-login if that's what's sourced)
-session  optional  pam_turnstile.so
-```
-
-> ⚠️ PAM configuration is distro-specific and the exact file to edit depends on what your profile ships. Check what exists under `/etc/pam.d/` and add the line to whichever file handles session setup for console logins.
-
----
-
-## 11. Bootstrapping Rust & Java
-
-Gentoo doesn't provide prebuilt Rust or Java packages for musl + LLVM systems. This creates a circular dependency — many packages need Rust or Java to build, but those runtimes must themselves be compiled from source.
-
-The solution is a two-stage bootstrap: first build Rust and Java inside a temporary musl chroot that uses `libstdc++` and then change the profile to use `libcxx` (avoids the circular dependency) and produce binary packages from that chroot, then install those binaries into the main system. Once installed, they are rebuilt a second time with the main system's optimised flags.
-
-This approach follows the [Gentoo Wiki's bootstrapping Rust via stage file](https://wiki.gentoo.org/wiki/Bootstrapping_Rust_via_stage_file).
-
-### 11.1 Set Up the Bootstrap Chroot
-
-```bash
-emerge fakeroot
-mkdir ~/gentoo-rootfs
-
-# Update this URL to the latest musl openrc stage3 from https://www.gentoo.org/downloads/
-STAGE3_URL="https://distfiles.gentoo.org/releases/amd64/autobuilds/current-stage3-amd64-musl-openrc/stage3-amd64-musl-openrc-<YYYYMMDDTHHMMSSZ>.tar.xz"
-wget -P ~/gentoo-rootfs "${STAGE3_URL}"
-
-cd ~/gentoo-rootfs
-fakeroot tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
-cp --dereference /etc/resolv.conf ~/gentoo-rootfs/etc/
-```
-
-Bind-mount into the bootstrap chroot:
-
-```bash
-mount --types proc /proc ~/gentoo-rootfs/proc
-mount --rbind /sys ~/gentoo-rootfs/sys && mount --make-rslave ~/gentoo-rootfs/sys
-mount --rbind /dev ~/gentoo-rootfs/dev && mount --make-rslave ~/gentoo-rootfs/dev
-mount --bind /run ~/gentoo-rootfs/run && mount --make-slave ~/gentoo-rootfs/run
-```
-
-### 11.2 Write the Bootstrap Script
-
-```bash
-cat << 'EOF' > ~/gentoo-rootfs/bootstrap.sh
-#!/bin/bash
-set -eo pipefail
-source /etc/profile
-
-emerge-webrsync
-
-# Build with libstdc++
-emerge llvm-core/clang llvm-core/llvm llvm-runtimes/compiler-rt \
-       llvm-runtimes/libunwind llvm-core/lld \
-       dev-lang/rust dev-java/openjdk
-
-# Switch to the musl/llvm profile — run 'eselect profile list' to find the
-# current name, as profile names change between Gentoo releases
-eselect profile set <N>   # select the musl/llvm profile
-env-update && source /etc/profile
-
-# Now rebuild the LLVM stack against libcxx
-emerge llvm-runtimes/clang-runtime
-emerge llvm-core/clang llvm-core/llvm \
-       llvm-runtimes/libcxx llvm-runtimes/libcxxabi \
-       llvm-runtimes/compiler-rt llvm-runtimes/compiler-rt-sanitizers \
-       llvm-runtimes/libunwind llvm-core/lld
-
-# Produce binary packages for installation into the main system
-emerge --buildpkg dev-lang/rust dev-java/openjdk
-EOF
-chmod +x ~/gentoo-rootfs/bootstrap.sh
-```
-
-### 11.3 Run the Bootstrap
-
-```bash
-chroot ~/gentoo-rootfs /bin/bash /bootstrap.sh
-```
-
-### 11.4 Install Binary Packages into the Main System
-
-Once the chroot script completes, copy the binary packages out and install them:
-
-```bash
-# Back up any existing binpkgs, then copy the bootstrap output
-[ -d /var/cache/binpkgs ] && mv /var/cache/binpkgs /var/cache/binpkgs.bak
-cp -r ~/gentoo-rootfs/var/cache/binpkgs /var/cache/binpkgs
-
-emerge --usepkg dev-lang/rust dev-java/openjdk
-```
-
-### 11.5 Unmount the Bootstrap Chroot
-
-Clean up the bind mounts:
-
-```bash
-umount -R ~/gentoo-rootfs/{proc,sys,dev,run}
-```
-
-### 11.6 Rebuild with Optimised Flags
-
-Rust manages its own LTO pipeline internally via the `lto` USE flag. The `RUSTFLAGS` in `make.conf` handle linker-level LTO (passing `-Clinker-plugin-lto` to the Clang linker), while the `lto` USE flag tells Cargo to enable LTO across Rust crates. These two are complementary and should both be set, but the `no-lto.conf` env file strips the C/C++ LTO flags from the compiler environment to avoid conflicts with Rust's own pipeline:
-
-```bash
-mkdir -p /etc/portage/env
-
-cat << 'EOF' > /etc/portage/env/no-lto.conf
-COMMON_FLAGS="-O3 -pipe -march=native -fno-semantic-interposition -fno-common"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-RUSTFLAGS="-C target-cpu=native -C strip=debuginfo -C opt-level=3 -Clinker=clang -Clink-arg=-fuse-ld=lld"
-EOF
-
-echo "dev-lang/rust no-lto.conf" > /etc/portage/package.env
-echo "dev-lang/rust lto" > /etc/portage/package.use/rust
-
-emerge dev-lang/rust dev-java/openjdk
-```
-
----
-
-## 12. User Setup & Privilege Escalation
-
-### 12.1 Create a User Account
-
-```bash
-useradd -m -G audio,video,input,usb,wheel,seat -s /bin/bash <username>
+useradd -m -G audio,video,input,usb,wheel -s /bin/bash <username>
 passwd <username>
 ```
 
-The group memberships match the device permissions set up in `mdev.conf` in Section 4.1:
+The group memberships match the device permissions set up in `mdev.conf` in Section 9.4:
 - **audio** — access to sound devices
 - **video** — access to DRI/GPU nodes
 - **input** — access to keyboards, mice, and other input devices
 - **usb** — access to USB devices
 - **wheel** — conventionally used to gate privilege escalation (doas, sudo)
-- **seat** — required for seatd access, enabling unprivileged Wayland compositor startup
 
-### 12.2 Set Up doas
+### 11.2 Set Up doas
 
 `doas` is a minimal privilege escalation tool from OpenBSD — a simpler, more auditable alternative to sudo. The `persist` USE flag must be enabled to allow authentication caching between calls.
 
@@ -749,7 +810,7 @@ doas -C /etc/doas.conf && echo "config ok"
 
 ---
 
-## 13. Final Steps & First Boot
+## 12. Final Steps & First Boot
 
 Exit the chroot, unmount everything, and reboot:
 
@@ -770,6 +831,61 @@ ip link                # verify network interfaces
 doas dmesg | tail -20  # check for any hardware errors
 ```
 
+---
+
+# Phase 5 — Desktop Stack
+
+## 13. Seat Management
+
+A seat manager arbitrates access to input and graphics hardware for unprivileged Wayland compositors and display servers. Without one, starting a compositor as a regular user will fail — it cannot open DRM or input devices directly.
+
+This guide does not use `elogind`. Instead it uses two complementary components:
+
+- **seatd** — a minimal, standalone seat management daemon
+- **turnstile** — a session/user service tracker from Chimera Linux that integrates with dinit and manages per-user service instances (including launching user-level dinit for PipeWire, WirePlumber, etc.)
+
+Together they cover what `elogind` would otherwise provide, without pulling in large chunks of the systemd codebase.
+
+### 13.1 Install seatd and turnstile
+
+seatd needs the `builtin server` USE flag to enable its built-in server, which is required for unprivileged compositor startup:
+
+```bash
+echo "sys-auth/seatd builtin server" > /etc/portage/package.use/seatd
+echo "sys-auth/turnstile ~amd64" > /etc/portage/package.accept_keywords/turnstile
+
+emerge sys-auth/seatd sys-auth/turnstile
+```
+
+Add your user to the `seat` group, which is created by seatd:
+
+```bash
+usermod -aG seat <username>
+```
+
+### 13.2 Configure turnstiled
+
+Turnstile needs to manage the user runtime directory. Edit `/etc/turnstile/turnstiled.conf`:
+
+```bash
+sed -i 's/^manage_rundir = no/manage_rundir = yes/' /etc/turnstile/turnstiled.conf
+```
+
+### 13.3 Enable the Services
+
+```bash
+ln -sr /usr/lib/dinit.d/seatd                /usr/lib/dinit.d/boot.d/
+ln -sr /etc/dinit.d/turnstiled               /usr/lib/dinit.d/boot.d/
+```
+
+### 13.4 PAM Configuration
+
+Turnstile hooks into PAM to open and close sessions. Ensure `pam_turnstile.so` is included in your login PAM stack.
+
+```
+# edit /etc/pam.d/login
+session  optional  pam_turnstile.so
+```
 ---
 
 ## 14. Graphics — Mesa Drivers
@@ -956,6 +1072,7 @@ echo "www-client/firefox -telemetry system-pipewire" > /etc/portage/package.use/
 emerge dev-libs/libatomic-stub
 emerge www-client/firefox
 ```
+
 ---
 
 ## Contributing
