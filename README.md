@@ -27,17 +27,19 @@ Targets **x86_64**, **UEFI boot**, **dinit**, and a **musl + LLVM/Clang** toolch
 9. [System Configuration](#9-system-configuration)
 10. [System Utilities](#10-system-utilities)
 
-**Phase 4 — Users & First Boot**
+**Phase 4 — Users & Desktop**
 
 11. [User Setup & Privilege Escalation](#11-user-setup--privilege-escalation)
-12. [Final Steps & First Boot](#12-final-steps--first-boot)
+12. [Seat Management](#12-seat-management)
+13. [Graphics — Mesa Drivers](#13-graphics--mesa-drivers)
+14. [Audio — PipeWire & WirePlumber](#14-audio--pipewire--wireplumber)
+15. [Compositor](#15-compositor)
+16. [User dinit Service Files](#16-user-dinit-service-files)
+17. [Browser — Firefox](#17-browser--firefox)
 
-**Phase 5 — Desktop Stack**
+**Phase 5 — First Boot**
 
-13. [Seat Management](#13-seat-management)
-14. [Graphics — Mesa Drivers](#14-graphics--mesa-drivers)
-15. [Audio — PipeWire & WirePlumber](#15-audio--pipewire--wireplumber)
-16. [Browser — Firefox](#16-browser--firefox)
+18. [Final Steps & First Boot](#18-final-steps--first-boot)
 
 ---
 
@@ -301,7 +303,7 @@ emerge --depclean
 ## 6. Make.conf & World Rebuild
 
 > 🟨 **Nvidia GPU users:** The proprietary Nvidia driver does not support musl and cannot be used on this system:
-> - **NVK + Zink** — Mesa's open-source Nouveau-based Vulkan driver, with OpenGL translated through Zink. Set `VIDEO_CARDS="nouveau nvk zink"` and add `vulkan` to your USE flags. You should also accept the unstable keyword for `media-libs/mesa` — see [Section 14](#14-graphics--mesa-drivers) for instructions.
+> - **NVK + Zink** — Mesa's open-source Nouveau-based Vulkan driver, with OpenGL translated through Zink. Set `VIDEO_CARDS="nouveau nvk zink"` and add `vulkan` to your USE flags. You should also accept the unstable keyword for `media-libs/mesa` — see [Section 13](#13-graphics--mesa-drivers) for instructions.
 > - **Proprietary Drivers & Flatpak** — Alongside NVK and Zink you could also run games and apps in a Flatpak sandbox that bundles its own glibc-based runtime, sidestepping the musl incompatibility. You would need to install the nividia kernel modules alongside nouveau and switch between them depending on the use case - I have not yet tested this
 
 Layer your optimised flags on top and do a full rebuild.
@@ -353,7 +355,7 @@ CPU_FLAGS_X86="aes avx avx2 bmi1 bmi2 f16c fma3 mmx mmxext pclmul popcnt rdrand 
 USE="-systemd -X wayland pipewire vaapi dbus vulkan -elogind seatd -logind"
 ```
 
-> ℹ️ ℹ️ With the optimised flags set, the next step is a full system rebuild followed immediately by the Rust and Java bootstrap — both are long so it makes sense to chain them and leave them unattended. The following section documents the bootstrap process in full and provides a complete script at Section 7.8 to run everything in one go.
+> ℹ️ With the optimised flags set, the next step is a full system rebuild followed immediately by the Rust and Java bootstrap — both are long so it makes sense to chain them and leave them unattended. The following section documents the bootstrap process in full and provides a complete script at Section 7.8 to run everything in one go.
 
 ---
 
@@ -565,10 +567,13 @@ echo ">>> Bootstrap complete."
 SCRIPT
 chmod +x ~/bootstrap-full.sh
 ```
-Run bootstrap and remerge world
+
+Run bootstrap and remerge world:
+
 ```bash
 emerge -e1 @world && bash ~/bootstrap-full.sh
 ```
+
 ---
 
 # Phase 3 — Boot & Core System
@@ -757,7 +762,7 @@ What each package provides:
 
 ---
 
-# Phase 4 — Users & First Boot
+# Phase 4 — Users & Desktop
 
 ## 11. User Setup & Privilege Escalation
 
@@ -810,32 +815,7 @@ doas -C /etc/doas.conf && echo "config ok"
 
 ---
 
-## 12. Final Steps & First Boot
-
-Exit the chroot, unmount everything, and reboot:
-
-```bash
-exit   # leave chroot
-
-umount -R /mnt/gentoo
-cryptsetup luksClose cryptroot
-
-reboot
-```
-
-On first boot you will be prompted for your LUKS passphrase. After unlocking, log in as your user and verify the basics:
-
-```bash
-dinitctl list          # check services are running
-ip link                # verify network interfaces
-doas dmesg | tail -20  # check for any hardware errors
-```
-
----
-
-# Phase 5 — Desktop Stack
-
-## 13. Seat Management
+## 12. Seat Management
 
 A seat manager arbitrates access to input and graphics hardware for unprivileged Wayland compositors and display servers. Without one, starting a compositor as a regular user will fail — it cannot open DRM or input devices directly.
 
@@ -846,7 +826,7 @@ This guide does not use `elogind`. Instead it uses two complementary components:
 
 Together they cover what `elogind` would otherwise provide, without pulling in large chunks of the systemd codebase.
 
-### 13.1 Install seatd and turnstile
+### 12.1 Install seatd and turnstile
 
 seatd needs the `builtin server` USE flag to enable its built-in server, which is required for unprivileged compositor startup:
 
@@ -863,7 +843,7 @@ Add your user to the `seat` group, which is created by seatd:
 usermod -aG seat <username>
 ```
 
-### 13.2 Configure turnstiled
+### 12.2 Configure turnstiled
 
 Turnstile needs to manage the user runtime directory. Edit `/etc/turnstile/turnstiled.conf`:
 
@@ -871,14 +851,14 @@ Turnstile needs to manage the user runtime directory. Edit `/etc/turnstile/turns
 sed -i 's/^manage_rundir = no/manage_rundir = yes/' /etc/turnstile/turnstiled.conf
 ```
 
-### 13.3 Enable the Services
+### 12.3 Enable the Services
 
 ```bash
 ln -sr /usr/lib/dinit.d/seatd                /usr/lib/dinit.d/boot.d/
 ln -sr /etc/dinit.d/turnstiled               /usr/lib/dinit.d/boot.d/
 ```
 
-### 13.4 PAM Configuration
+### 12.4 PAM Configuration
 
 Turnstile hooks into PAM to open and close sessions. Ensure `pam_turnstile.so` is included in your login PAM stack.
 
@@ -886,9 +866,10 @@ Turnstile hooks into PAM to open and close sessions. Ensure `pam_turnstile.so` i
 # edit /etc/pam.d/login
 session  optional  pam_turnstile.so
 ```
+
 ---
 
-## 14. Graphics — Mesa Drivers
+## 13. Graphics — Mesa Drivers
 
 Mesa provides the OpenGL and Vulkan drivers for AMD, Intel, and Nvidia. Assuming `VIDEO_CARDS` has been set correctly and you are not using Nvidia, proceed with installing Mesa:
 
@@ -935,7 +916,7 @@ Flatpak handles the musl incompatibility for userspace, but switching between No
 
 ---
 
-## 15. Audio — PipeWire & WirePlumber
+## 14. Audio — PipeWire & WirePlumber
 
 PipeWire requires a patch to work correctly with `libudev-zero`. Without it, PipeWire's ALSA plugin enumerates devices but then rejects them all during initialisation because `libudev-zero` does not populate the `SOUND_INITIALIZED` property that the upstream code checks for, and device parent traversal is not performed during enumeration. The patch source is tracked at [illiliti/libudev-zero#26](https://github.com/illiliti/libudev-zero/issues/26#issuecomment-2198457370) — check there for updates if the patch no longer applies cleanly against a newer PipeWire version.
 
@@ -993,12 +974,30 @@ echo "media-video/pipewire sound-server pipewire-alsa" > /etc/portage/package.us
 emerge media-video/pipewire media-video/wireplumber
 ```
 
-#### User dinit service files
+---
+
+## 15. Compositor
+
+Emerge your Wayland compositor of choice:
+
+```bash
+emerge gui-wm/niri   # substitute your compositor of choice
+```
+
+---
+
+## 16. User dinit Service Files
 
 Turnstile starts a per-user dinit instance on login and exposes two targets that compositor and audio services can hook into:
 
 - `graphical.target` — triggered when a graphical session is ready to start
 - `graphical.monitor` — a monitor service that tracks when the graphical session is active
+
+Switch to your user to create the service files:
+
+```bash
+su - <username>
+```
 
 User services live under `~/.config/dinit.d/`. Create the directory and write the service files:
 
@@ -1033,10 +1032,6 @@ depends-on      = pipewire
 
 For your Wayland compositor, substitute `niri` with whichever compositor you are using. The key points are that it triggers `graphical.target` on start and depends on both `graphical.monitor` and `pipewire`:
 
-```bash
-emerge gui-wm/niri   # substitute your compositor of choice
-```
-
 **`~/.config/dinit.d/niri`** (substitute your compositor)
 ```
 type            = process
@@ -1055,15 +1050,15 @@ ln -sr wireplumber boot.d/
 ln -sr niri boot.d/        # substitute your compositor name
 ```
 
-Verify audio is working after logging in:
+Return to root when done:
 
 ```bash
-wpctl status
+exit
 ```
 
 ---
 
-## 16. Browser — Firefox
+## 17. Browser — Firefox
 
 Before emerging Firefox, install `libatomic-stub` to prevent the build system from pulling in GCC as a dependency, and set the appropriate USE flags:
 
@@ -1071,6 +1066,31 @@ Before emerging Firefox, install `libatomic-stub` to prevent the build system fr
 echo "www-client/firefox -telemetry system-pipewire" > /etc/portage/package.use/firefox
 emerge dev-libs/libatomic-stub
 emerge www-client/firefox
+```
+
+---
+
+# Phase 5 — First Boot
+
+## 18. Final Steps & First Boot
+
+Exit the chroot, unmount everything, and reboot:
+
+```bash
+exit   # leave chroot
+
+umount -R /mnt/gentoo
+cryptsetup luksClose cryptroot
+
+reboot
+```
+
+On first boot you will be prompted for your LUKS passphrase. After unlocking, log in as your user and verify the basics:
+
+```bash
+dinitctl list          # check services are running
+ip link                # verify network interfaces
+doas dmesg | tail -20  # check for any hardware errors
 ```
 
 ---
