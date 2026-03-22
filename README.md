@@ -192,7 +192,7 @@ mount -o ${BTRFS_OPTS},subvol=@log                       /dev/mapper/cryptroot /
 mount -o noatime,discard=async,nodatacow,subvol=@tmp     /dev/mapper/cryptroot /mnt/gentoo/var/tmp
 mount -o ${BTRFS_OPTS},subvol=@cache                     /dev/mapper/cryptroot /mnt/gentoo/var/cache
 mount -o ${BTRFS_OPTS},subvol=@repos                     /dev/mapper/cryptroot /mnt/gentoo/var/db/repos
-mount -o ${BTRFS_OPTS},subvol=@games                     /dev/mapper/cryptroot /mnt/gentoo/games
+mount -o ${BTRFS_OPTS},subvol=@games                     /dev/mapper/cryptroot /mnt/gentoo/opt/games
 
 chattr +C /mnt/gentoo/var/tmp/
 chattr +C /mnt/gentoo/swap
