@@ -182,6 +182,7 @@ cd /mnt/gentoo
 
 mkdir swap home .snapshots efi games
 mkdir -p var/{cache,db/repos,log,tmp}
+mkdir -p opt/games
 
 mount /dev/nvme0n1p1 /mnt/gentoo/efi
 mount -o noatime,discard=async,nodatacow,subvol=@swap    /dev/mapper/cryptroot /mnt/gentoo/swap
@@ -685,7 +686,16 @@ dri/renderD[0-9]*   root:video 660
 ```
 
 ---
-
+### 9.5 Games Group
+ 
+If the `@games` subvolume is mounted and is intended to be shared across all users. Create a `games` group and set ownership so any user in the group can read and write game data:
+ 
+```bash
+groupadd games
+chown root:games /opt/games
+chmod 775 /opt/games
+```
+---
 ## 10. System Utilities
 
 Install and enable a basic set of system utilities:
@@ -705,8 +715,16 @@ ln -sr /usr/lib/dinit.d/fcron /usr/lib/dinit.d/boot.d/
 ln -sr /usr/lib/dinit.d/chrony /usr/lib/dinit.d/boot.d/
 ```
 
-fcron isn't running inside the chroot so `fcrontab` can't be used yet. Instead, drop cron fragments directly into `/etc/cron.daily/` — fcron picks these up automatically on start:
-
+Initialise the fcron system crontab. This sets up fcron to watch `/etc/crontab`
+and `/etc/cron.d/` for changes, and enables `run-crons` to process
+`/etc/cron.{daily,weekly,monthly}`:
+```bash
+emerge --config sys-process/fcron
+```
+fcron isn't running inside the chroot so `fcrontab` can't be used yet. Instead,
+drop scripts into `/etc/cron.daily/` — `run-crons` is called every 10 minutes
+via `/etc/crontab` and will execute them once per day when the daily lockfile
+has been cleared:
 ```bash
 mkdir -p /etc/cron.daily
 
@@ -721,7 +739,6 @@ cat << 'EOF' > /etc/cron.daily/btrbk
 /usr/sbin/btrbk -q run
 EOF
 chmod +x /etc/cron.daily/btrbk
-```
 
 #### Configuring btrbk
 
@@ -734,20 +751,20 @@ cat << 'EOF' > /etc/btrbk/btrbk.conf
 snapshot_dir           /.snapshots
 
 # Retention policy
-snapshot_preserve_min  2d
-snapshot_preserve      1d weekly!4
+snapshot_preserve_min  latest
+snapshot_preserve      0h 2d 4w 0m 0y
 
 # Subvolumes to snapshot
 volume /dev/mapper/cryptroot
-  subvolume @
-  subvolume @home
-  subvolume @games
+  subvolume /
+  subvolume /home
+  subvolume /opt/games
 EOF
 ```
 
 Retention policy breakdown:
-- `snapshot_preserve_min 2d` — always keep snapshots younger than 2 days, so today's and yesterday's are guaranteed to survive regardless of other rules. This ensures you always have a clean snapshot to roll back to even if btrbk runs after a bad update on boot.
-- `snapshot_preserve 1d weekly!4` — beyond the 2 day minimum, keep today's snapshot and promote one per week to a weekly slot. Exactly 4 weeklies are kept, with the oldest deleted when a 5th would be created.
+- `snapshot_preserve_min latest` — The latest snapshot is always kept, regardless of the preservation policy
+- `snapshot_preserve 0h 2d 4w 0m 0y` — Preserve daily snapshots for up to 2 days, and weekly snapshots for up to 4 weeks
 
 > ℹ️ `@games` can be removed from the config if you didn't create that subvolume. Other subvolumes are intentionally excluded — their contents are either ephemeral or regenerable and aren't worth snapshotting.
 
@@ -769,7 +786,7 @@ What each package provides:
 ### 11.1 Create a User Account
 
 ```bash
-useradd -m -G audio,video,input,usb,wheel -s /bin/bash <username>
+useradd -m -G audio,video,input,usb,wheel,games -s /bin/bash <username>
 passwd <username>
 ```
 
