@@ -5,6 +5,9 @@ CONF_FILE="/etc/distrobox-nvidia-sync.conf"
 source "$CONF_FILE"
 source /lib/gentoo/functions.sh
 
+# Wipe elevation variables from Portage so Distrobox doesn't panic
+unset DOAS_USER SUDO_USER
+
 version_gt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n1)" == "$2" ]
 }
