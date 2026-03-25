@@ -1,0 +1,173 @@
+#!/bin/bash
+# nvidia-distrobox-sync - Automated Hybrid Driver Synchronizer
+
+CONF_FILE="/etc/distrobox-nvidia-sync.conf"
+source "$CONF_FILE"
+source /lib/gentoo/functions.sh
+
+version_gt() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n1)" == "$2" ]
+}
+
+ebegin "Checking local and remote repositories..."
+
+# Find installed versions of packages
+MODULES_VER=$(equery list -i -F'$version' "$PACKAGE_DIR" 2>/dev/null | tail -n1)
+FEDORA_INSTALLED=$(su -c "distrobox-enter -n $CONTAINER -- rpm -q --qf '%{VERSION}\n' xorg-x11-drv-nvidia 2>/dev/null" "$NORMAL_USER")
+
+ebegin "  -> Fetching Gentoo upstream versions"
+GENTOO_RAW=$(equery list -p -F '${mask}${version}' ">=${PACKAGE_DIR}-${MODULES_VER}" 2>/dev/null)
+if [ -z "$GENTOO_RAW" ]; then
+    eerror "FAILED! Could not fetch Gentoo ebuilds. Is gentoolkit installed? Is Portage synced?"
+    exit 1
+fi
+eend 0
+GENTOO_VERS=( $(echo "$GENTOO_RAW" | grep -Po "[[:space:]][[:space:]]\K.*") )
+
+ebegin "  -> Fetching Fedora upstream versions"
+FEDORA_RAW_VERS=$(su -c "distrobox-enter -n $CONTAINER -- dnf repoquery \"xorg-x11-drv-nvidia\" --queryformat '%{VERSION}\n'" "$NORMAL_USER")
+if [ $? -ne 0 ] || [ -z "$FEDORA_RAW_VERS" ]; then
+    eerror "FAILED! Could not reach Fedora repositories. Check container status or network."
+    exit 1
+fi
+eend 0
+FEDORA_VERS=( $(printf "%s\n%s\n" "$FEDORA_INSTALLED" "$FEDORA_RAW_VERS" | sort -u -V | sed -n "/^$FEDORA_INSTALLED\$/,\$p") )
+
+echo "----------------------------------------------------"
+einfo "Gentoo Installed   : ${MODULES_VER:-None}"
+einfo "Fedora Installed   : ${FEDORA_INSTALLED:-None}"
+einfo "Gentoo Available   : ${GENTOO_VERS[@]}"
+einfo "Fedora Available   : ${FEDORA_VERS[@]}"
+echo "----------------------------------------------------"
+
+if [ -z "$MODULES_VER" ]; then
+    MODULES_INSTALLED=false
+    TYPE="ebuild"
+
+    einfo "No installed Gentoo $PACKAGE_DIR found. Checking local overlay for base ebuild..."
+    if [ -z "$FEDORA_INSTALLED" ]; then
+        einfo "No nvidia drivers found on Fedora either. Assuming initial sync."
+    fi
+
+    # Find all matching ebuilds grab the highest one
+    MODULES_VER=$(equery list -o -F'$version' "$PACKAGE_DIR" 2>/dev/null | tail -n1)
+
+    # Fixed logic and variable check
+    if [ -n "$MODULES_VER" ]; then
+        einfo "Found base ebuild version ${MODULES_VER}. Using as starting point."
+    else
+        eerror "No installed package and no base ebuild found in local overlay. Cannot proceed."
+        exit 1
+    fi
+else
+    # Version found, meaning installed
+    MODULES_INSTALLED=true
+    TYPE="installed"
+fi
+
+# Find the highest shared version between Fedora and Gentoo
+declare -A seen
+for ver in "${GENTOO_VERS[@]}"; do
+    seen["$ver"]=1
+done
+
+MAX_VER=""
+for ver in "${FEDORA_VERS[@]}"; do
+    if [[ -n "${seen[$ver]}" ]]; then
+        if [[ -z "$MAX_VER" ]] || version_gt "$ver" "$MAX_VER"; then
+            MAX_VER="$ver"
+        fi
+    fi
+done
+
+# --- SAFEGUARD CHECKS ---
+
+if [ "$MODULES_INSTALLED" = true ]; then
+    if [ "$MODULES_VER" == "$MAX_VER" ] && [ "$FEDORA_INSTALLED" == "$MAX_VER" ]; then
+        eend 0 "You are running the latest synchronized drivers ($MAX_VER)."
+        exit 0
+    fi
+fi
+
+if [ -z "$MAX_VER" ]; then
+    eend 1 "No consistent version found. Exiting."
+    exit 1
+fi
+
+if version_gt "$FEDORA_INSTALLED" "$MAX_VER"; then
+    eend 1 "Installed version on Fedora ($FEDORA_INSTALLED) exceeds maximum compatible version ($MAX_VER). Cannot continue."
+    exit 1
+fi
+
+if version_gt "$MODULES_VER" "$MAX_VER"; then
+    eend 1 "$TYPE version on Gentoo ($MODULES_VER) exceeds maximum compatible version ($MAX_VER). Cannot continue."
+    exit 1
+fi
+
+if [ "${GENTOO_VERS[-1]}" == "$MAX_VER" ]; then
+    einfo "Fedora matches the absolute latest Gentoo driver! Proceeding."
+else
+    einfo "Fedora lags slightly behind absolute Gentoo upstream, but a synchronized update ($MAX_VER) is available."
+fi
+
+
+# --- EBUILD BUMPING ---
+
+MAIN_TREE_NEW="/var/db/repos/gentoo/x11-drivers/nvidia-drivers/nvidia-drivers-$MAX_VER.ebuild"
+MAIN_TREE_OLD="/var/db/repos/gentoo/x11-drivers/nvidia-drivers/nvidia-drivers-$MODULES_VER.ebuild"
+TMP_OLD="/tmp/nvidia-drivers-$MODULES_VER-vanilla.ebuild"
+
+OLD_EBUILD="$OVERLAY/$PACKAGE_DIR/$PACKAGE-$MODULES_VER.ebuild"
+NEW_EBUILD="$OVERLAY/$PACKAGE_DIR/$PACKAGE-$MAX_VER.ebuild"
+
+if [ ! -f "$NEW_EBUILD" ]; then
+        ewarn "New NVIDIA drivers detected ($MAX_VER). Auto-bumping custom modules ebuild..."
+        einfo "Review upstream Gentoo changes between Nvidia Drivers $MODULES_VER and $MAX_VER?"
+
+        read -p "  Show diff of upstream nvidia-drivers ebuilds? (Y/n): " review_diff
+        if [[ $review_diff == [yY] || $review_diff == [yY][eE][sS] || -z $review_diff ]]; then
+            if [ ! -f "$MAIN_TREE_OLD" ]; then
+                ewarn "Old upstream ebuild ($MODULES_VER) pruned from local tree. Fetching from Gentoo Git..."
+                wget -qO "$TMP_OLD" "https://gitweb.gentoo.org/repo/gentoo.git/plain/x11-drivers/nvidia-drivers/nvidia-drivers-$MODULES_VER.ebuild"
+                if [ -s "$TMP_OLD" ]; then
+                    MAIN_TREE_OLD="$TMP_OLD"
+                else
+                    eerror "Failed to fetch historical vanilla ebuild. Cannot generate a clean diff."
+                    MAIN_TREE_OLD=""
+                fi
+            fi
+            if [ -n "$MAIN_TREE_OLD" ] && [ -f "$MAIN_TREE_NEW" ]; then
+                diff -u --color=always "$MAIN_TREE_OLD" "$MAIN_TREE_NEW" | less -R
+            fi
+            rm -f /tmp/nvidia-drivers-*-vanilla.ebuild
+        fi
+
+        # Ensure we have an old ebuild to copy from, otherwise touch a blank one to prevent cp errors on initial sync
+        if [ ! -f "$OLD_EBUILD" ]; then
+            eerror "Base custom ebuild missing. Cannot auto-bump!"
+            exit 1
+        fi
+
+        cp "$OLD_EBUILD" "$NEW_EBUILD"
+
+        echo ""
+        einfo "Your new custom modules ebuild has been copied to: $NEW_EBUILD"
+        read -p "  Would you like to open it in your editor to apply any upstream changes? (y/N): " edit_ebuild
+        if [[ $edit_ebuild == [yY] || $edit_ebuild == [yY][eE][sS] ]]; then
+            ${EDITOR:-nano} "$NEW_EBUILD"
+        fi
+
+        ebegin "Generating manifest for new ebuild"
+        ebuild "$NEW_EBUILD" manifest >/dev/null 2>&1
+        eend $?
+fi
+
+einfo "Unfreezing packages and refreezing at new updated version"
+mkdir -p /etc/portage/package.mask
+echo ">${PACKAGE_DIR}-$MAX_VER" > /etc/portage/package.mask/nvidia-freeze
+
+# Update fedora version
+sed -i 's|^FEDORA_VER=.*|FEDORA_VER="'"$MAX_VER"'"|' "$CONF_FILE"
+
+einfo "Exported state to $CONF_FILE."
+einfo "Next time $PACKAGE_DIR is updated, Distrobox will also be updated."
