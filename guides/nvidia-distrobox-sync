@@ -1,7 +1,7 @@
 #!/bin/bash
 # nvidia-distrobox-sync - Automated Hybrid Driver Synchronizer
 
-CONF_FILE="/etc/distrobox-nvidia-sync.conf"
+CONF_FILE=
 source "$CONF_FILE"
 source /lib/gentoo/functions.sh
 
