@@ -5,6 +5,11 @@ CONF_FILE=
 source "$CONF_FILE"
 source /lib/gentoo/functions.sh
 
+if [ "$EUID" -ne 0 ]; then
+    eerror "This sync hook must be run as root (or triggered natively via emaint sync)."
+    exit 1
+fi
+
 # Wipe elevation variables from Portage so Distrobox doesn't panic
 unset DOAS_USER SUDO_USER
 
@@ -16,32 +21,7 @@ ebegin "Checking local and remote repositories..."
 
 # Find installed versions of packages
 MODULES_VER=$(equery list -i -F'$version' "$PACKAGE_DIR" 2>/dev/null | tail -n1)
-FEDORA_INSTALLED=$(su -c "distrobox-enter -n $CONTAINER -- rpm -q --qf '%{VERSION}\n' xorg-x11-drv-nvidia 2>/dev/null" "$NORMAL_USER")
-
-ebegin "  -> Fetching Gentoo upstream versions"
-GENTOO_RAW=$(equery list -p -F '${mask}${version}' ">=${PACKAGE_DIR}-${MODULES_VER}" 2>/dev/null)
-if [ -z "$GENTOO_RAW" ]; then
-    eerror "FAILED! Could not fetch Gentoo ebuilds. Is gentoolkit installed? Is Portage synced?"
-    exit 1
-fi
-eend 0
-GENTOO_VERS=( $(echo "$GENTOO_RAW" | grep -Po "[[:space:]][[:space:]]\K.*") )
-
-ebegin "  -> Fetching Fedora upstream versions"
-FEDORA_RAW_VERS=$(su -c "distrobox-enter -n $CONTAINER -- dnf repoquery \"xorg-x11-drv-nvidia\" --queryformat '%{VERSION}\n'" "$NORMAL_USER")
-if [ $? -ne 0 ] || [ -z "$FEDORA_RAW_VERS" ]; then
-    eerror "FAILED! Could not reach Fedora repositories. Check container status or network."
-    exit 1
-fi
-eend 0
-FEDORA_VERS=( $(printf "%s\n%s\n" "$FEDORA_INSTALLED" "$FEDORA_RAW_VERS" | sort -u -V | sed -n "/^$FEDORA_INSTALLED\$/,\$p") )
-
-echo "----------------------------------------------------"
-einfo "Gentoo Installed   : ${MODULES_VER:-None}"
-einfo "Fedora Installed   : ${FEDORA_INSTALLED:-None}"
-einfo "Gentoo Available   : ${GENTOO_VERS[@]}"
-einfo "Fedora Available   : ${FEDORA_VERS[@]}"
-echo "----------------------------------------------------"
+FEDORA_INSTALLED=$(su -c "distrobox-enter -n $CONTAINER -- rpm -q --qf '%{VERSION}\n' xorg-x11-drv-nvidia 2>/dev/null" "$NORMAL_USER" | grep -E '^[0-9]')
 
 if [ -z "$MODULES_VER" ]; then
     MODULES_INSTALLED=false
@@ -67,6 +47,35 @@ else
     MODULES_INSTALLED=true
     TYPE="installed"
 fi
+
+ebegin "  -> Fetching Gentoo upstream versions"
+GENTOO_RAW=$(equery list -p -F '${mask}${version}' ">=x11-drivers/nvidia-drivers-${MODULES_VER}" 2>/dev/null)
+if [ -z "$GENTOO_RAW" ]; then
+    eerror "FAILED! Could not fetch Gentoo ebuilds. Is gentoolkit installed? Is Portage synced?"
+    exit 1
+fi
+eend 0
+GENTOO_VERS=( $(echo "$GENTOO_RAW" | grep -Po "[[:space:]][[:space:]]\K.*") )
+
+ebegin "  -> Fetching Fedora upstream versions"
+FEDORA_RAW_VERS=$(su -c "distrobox-enter -n $CONTAINER -- dnf repoquery \"xorg-x11-drv-nvidia\" --queryformat '%{VERSION}\n'" "$NORMAL_USER")
+if [ $? -ne 0 ] || [ -z "$FEDORA_RAW_VERS" ]; then
+    eerror "FAILED! Could not reach Fedora repositories. Check container status or network."
+    exit 1
+fi
+eend 0
+FEDORA_VERS=( $(printf "%s\n%s\n" "$FEDORA_INSTALLED" "$FEDORA_RAW_VERS" | sort -u -V | sed -n "/^$FEDORA_INSTALLED\$/,\$p") )
+
+echo "----------------------------------------------------"
+if [ "$MODULES_INSTALLED" = true ]; then
+    einfo "Gentoo Installed   : ${MODULES_VER}"
+else
+    einfo "Gentoo Installed   : None"
+fi
+einfo "Fedora Installed   : ${FEDORA_INSTALLED:-None}"
+einfo "Gentoo Available   : ${GENTOO_VERS[*]}"
+einfo "Fedora Available   : ${FEDORA_VERS[*]}"
+echo "----------------------------------------------------"
 
 # Find the highest shared version between Fedora and Gentoo
 declare -A seen
@@ -115,6 +124,17 @@ fi
 
 
 # --- EBUILD BUMPING ---
+UPSTREAM_DIR="/var/db/repos/gentoo/x11-drivers/nvidia-drivers"
+LOCAL_FILES_DIR="$OVERLAY/$PACKAGE_DIR/files"
+
+ebegin "Synchronizing upstream auxiliary files..."
+if [ -d "$UPSTREAM_DIR/files" ]; then
+    rm -rf "$LOCAL_FILES_DIR"
+    cp -a "$UPSTREAM_DIR/files" "$OVERLAY/$PACKAGE_DIR/"
+    eend 0
+else
+    ewarn "Upstream files missing at $UPSTREAM_DIR. Keeping existing files (if any)."
+fi
 
 MAIN_TREE_NEW="/var/db/repos/gentoo/x11-drivers/nvidia-drivers/nvidia-drivers-$MAX_VER.ebuild"
 MAIN_TREE_OLD="/var/db/repos/gentoo/x11-drivers/nvidia-drivers/nvidia-drivers-$MODULES_VER.ebuild"
