@@ -486,32 +486,114 @@ The script below covers everything from Section 7.1 onward. Before running it, u
 ```bash
 cat << 'SCRIPT' > ~/bootstrap-full.sh
 #!/bin/bash
-set -eo pipefail
+# Bootstrap Rust + OpenJDK on a musl/llvm Gentoo host, then shrink LLVM to the
+# targets in the host's make.conf.
+#
+#   chroot phase: gcc musl stage3 -> toolchain -> musl/llvm profile -> libc++ rebuild
+#                 -> Rust + OpenJDK binpkgs that link libc++ (what the host has)
+#   host phase:   install those binpkgs, snapshot clang, then rebuild
+#                 LLVM/clang/lld (minimal targets), then Rust + OpenJDK
+#
+# Usage (as root):
+#   STAGE3_URL=https://.../stage3-amd64-musl-....tar.xz ./bootstrap-full.sh
+#   SKIP_CHROOT=1 ./bootstrap-full.sh     # resume: chroot binpkgs already built
+#
+# Prerequisite: LLVM_TARGETS is set to the wanted minimal set in the HOST's make.conf.
+set -euo pipefail
 
-# ── Configuration ────────────────────────────────────────────────────────────
-ROOTFS=~/gentoo-rootfs
-STAGE3_URL=
-# Set this to the profile number for the musl/llvm profile (eselect profile list)
-MUSL_LLVM_PROFILE=<N>
-# ─────────────────────────────────────────────────────────────────────────────
+die() { echo "ERROR: $*" >&2; exit 1; }
 
-echo ">>> Setting up bootstrap chroot..."
-emerge fakeroot
-mkdir -p "${ROOTFS}"
+[[ $EUID -eq 0 ]] || die "this script must be run as root"
 
-cd "${ROOTFS}"
-wget $STAGE3_URL
-fakeroot tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
-cp --dereference /etc/resolv.conf "${ROOTFS}/etc/"
+ROOTFS="${ROOTFS:-$HOME/gentoo-rootfs}"
+STAGE3_URL="${STAGE3_URL:-}"                      # link to the gcc musl tarball
+MUSL_LLVM_PROFILE="${MUSL_LLVM_PROFILE:-default/linux/amd64/23.0/musl/llvm}"  # name from `eselect profile list`
+SKIP_CHROOT="${SKIP_CHROOT:-0}"
+BOOT=/opt/llvm-bootstrap
 
-echo ">>> Mounting virtual filesystems..."
-mount --types proc /proc "${ROOTFS}/proc"
-mount --rbind /sys "${ROOTFS}/sys" && mount --make-rslave "${ROOTFS}/sys"
-mount --rbind /dev "${ROOTFS}/dev" && mount --make-rslave "${ROOTFS}/dev"
-mount --bind /run "${ROOTFS}/run" && mount --make-slave "${ROOTFS}/run"
+[[ $SKIP_CHROOT == 1 || -n $STAGE3_URL ]] || die "set STAGE3_URL (or SKIP_CHROOT=1 to resume)"
 
-echo ">>> Writing inner bootstrap script..."
-cat << EOF > "${ROOTFS}/run-bootstrap.sh"
+LLVM_TARGETS="$(portageq envvar LLVM_TARGETS)"
+HOST_MAKEOPTS="$(portageq envvar MAKEOPTS)"
+[[ -n $LLVM_TARGETS ]] || die "LLVM_TARGETS is empty; set it in the host's make.conf"
+echo ">>> Wanted LLVM_TARGETS: ${LLVM_TARGETS}"
+
+cleanup_mounts() {
+    echo ">>> Ensuring bootstrap chroot filesystems are unmounted..."
+    for mnt in proc sys dev run; do
+        if mountpoint -q "${ROOTFS}/${mnt}"; then
+            umount -R "${ROOTFS}/${mnt}" || umount -l "${ROOTFS}/${mnt}"
+        fi
+    done
+}
+trap cleanup_mounts EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir -p /etc/portage/profile
+cat << EOF > /etc/portage/profile/use.force
+-llvm_targets_AArch64
+-llvm_targets_AMDGPU
+-llvm_targets_ARM
+-llvm_targets_AVR
+-llvm_targets_BPF
+-llvm_targets_Hexagon
+-llvm_targets_Lanai
+-llvm_targets_MSP430
+-llvm_targets_Mips
+-llvm_targets_NVPTX
+-llvm_targets_PowerPC
+-llvm_targets_RISCV
+-llvm_targets_Sparc
+-llvm_targets_SystemZ
+-llvm_targets_WebAssembly
+-llvm_targets_X86
+-llvm_targets_XCore
+-llvm_targets_ARC
+-llvm_targets_CSKY
+-llvm_targets_M68k
+-llvm_targets_VE
+-llvm_targets_LoongArch
+-llvm_targets_SPIRV
+EOF
+
+build_chroot() {
+    echo ">>> Setting up bootstrap chroot..."
+    mkdir -p "${ROOTFS}"
+    cd "${ROOTFS}"
+
+    if [[ ! -e "${ROOTFS}/etc/gentoo-release" ]]; then
+        wget -nc "${STAGE3_URL}"
+        tar xpvf "${STAGE3_URL##*/}" --xattrs-include='*.*' --numeric-owner
+    fi
+    cp --dereference /etc/resolv.conf "${ROOTFS}/etc/"
+
+    mkdir -p "${ROOTFS}/etc/portage/profile/"
+    cp /etc/portage/profile/use.force "${ROOTFS}/etc/portage/profile/use.force"
+
+    # Host USE/keyword settings must match in the chroot, otherwise portage rejects the
+    # binpkgs on the host (USE mismatch) and tries to build Rust from source.
+    for f in package.use package.accept_keywords package.license package.mask package.unmask; do
+        [[ -e /etc/portage/${f} ]] && cp -a "/etc/portage/${f}" "${ROOTFS}/etc/portage/" || true
+    done
+    # NOTE: a USE="..." line in the host make.conf is NOT copied; mirror it by hand if needed.
+
+    if ! grep -q 'added by bootstrap-full.sh' "${ROOTFS}/etc/portage/make.conf"; then
+        {
+            echo "# added by bootstrap-full.sh"
+            echo "LLVM_TARGETS=\"${LLVM_TARGETS}\""
+            [[ -z $HOST_MAKEOPTS ]] || echo "MAKEOPTS=\"${HOST_MAKEOPTS}\""
+        } >> "${ROOTFS}/etc/portage/make.conf"
+    fi
+
+    echo ">>> Mounting virtual filesystems..."
+    mountpoint -q "${ROOTFS}/proc" || mount --types proc /proc "${ROOTFS}/proc"
+    mountpoint -q "${ROOTFS}/sys" || { mount --rbind /sys "${ROOTFS}/sys" && mount --make-rslave "${ROOTFS}/sys"; }
+    mountpoint -q "${ROOTFS}/dev" || { mount --rbind /dev "${ROOTFS}/dev" && mount --make-rslave "${ROOTFS}/dev"; }
+    mountpoint -q "${ROOTFS}/run" || { mount --bind /run "${ROOTFS}/run" && mount --make-slave "${ROOTFS}/run"; }
+
+    echo ">>> Writing inner bootstrap script..."
+    cat << EOF > "${ROOTFS}/run-bootstrap.sh"
 #!/bin/bash
 set -eo pipefail
 source /etc/profile
@@ -535,34 +617,60 @@ emerge llvm-core/clang llvm-core/llvm \\
 echo ">>> Stage 3: producing libcxx-linked binpkgs..."
 emerge --buildpkg dev-lang/rust dev-java/openjdk
 EOF
-chmod +x "${ROOTFS}/run-bootstrap.sh"
+    chmod +x "${ROOTFS}/run-bootstrap.sh"
 
-echo ">>> Running bootstrap inside chroot..."
-chroot "${ROOTFS}" /bin/bash /run-bootstrap.sh
+    echo ">>> Running bootstrap inside chroot..."
+    chroot "${ROOTFS}" /bin/bash /run-bootstrap.sh
+
+    cleanup_mounts
+}
+
+[[ $SKIP_CHROOT == 1 ]] || build_chroot
 
 echo ">>> Installing binary packages into main system..."
-[ -d /var/cache/binpkgs ] && mv /var/cache/binpkgs /var/cache/binpkgs.bak
-cp -r "${ROOTFS}/var/cache/binpkgs" /var/cache/binpkgs
-emerge --usepkg dev-lang/rust dev-java/openjdk
+[[ -d ${ROOTFS}/var/cache/binpkgs ]] || die "no binpkgs in ${ROOTFS}/var/cache/binpkgs (chroot phase not finished?)"
+mkdir -p /var/cache/binpkgs
+cp -a "${ROOTFS}/var/cache/binpkgs/." /var/cache/binpkgs/
+emaint binhost --fix
+# --usepkgonly: a USE/version mismatch fails here instead of silently compiling.
+emerge --usepk dev-lang/rust dev-java/openjdk
 
-echo ">>> Unmounting bootstrap chroot..."
-umount -R "${ROOTFS}/proc" "${ROOTFS}/sys" "${ROOTFS}/dev" "${ROOTFS}/run"
+echo ">>> Backing up current compiler to build specific targets - so clang doesn't crash"
+LLVM_DIR="$(dirname "$(dirname "$(readlink -f "$(command -v clang)")")")"
+[[ -x ${LLVM_DIR}/bin/clang ]] || die "could not locate the active LLVM prefix (got ${LLVM_DIR})"
+rm -rf "${BOOT}"
+mkdir -p "${BOOT}"
+tar -C "${LLVM_DIR}" -cpf - . | tar -C "${BOOT}" -xpf -
 
-echo ">>> Configuring portage env and rebuilding with optimised flags..."
-mkdir -p /etc/portage/env
-cat << 'ENVEOF' > /etc/portage/env/no-lto.conf
-COMMON_FLAGS="-O3 -pipe -march=native -fno-semantic-interposition -fno-common"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-RUSTFLAGS="-C target-cpu=native -C strip=debuginfo -C opt-level=3 -Clinker=clang -Clink-arg=-fuse-ld=lld"
-ENVEOF
+# The copy only protects you if clang doesn't load the system libLLVM.so via an absolute RUNPATH.
+echo ">>> clang RUNPATH in the copy (must NOT point into ${LLVM_DIR}):"
+"${BOOT}/bin/llvm-readelf" -d "${BOOT}/bin/clang" | grep -E 'RUNPATH|RPATH' || echo "    (none)"
 
-echo "dev-lang/rust no-lto.conf" > /etc/portage/package.env
-echo "dev-lang/rust lto" > /etc/portage/package.use/rust
+mkdir -p /etc/portage/env /etc/portage/package.env
 
-emerge dev-lang/rust dev-java/openjdk
+cat << EOF > /etc/portage/env/bootstrap-clang.conf
+CC=${BOOT}/bin/clang
+CXX=${BOOT}/bin/clang++
+AR=${BOOT}/bin/llvm-ar
+NM=${BOOT}/bin/llvm-nm
+RANLIB=${BOOT}/bin/llvm-ranlib
+STRIP=${BOOT}/bin/llvm-strip
+OBJCOPY=${BOOT}/bin/llvm-objcopy
+EOF
+
+cat << EOF > /etc/portage/package.env/toolchain-bootstrap
+llvm-core/llvm bootstrap-clang.conf
+llvm-core/clang bootstrap-clang.conf
+llvm-core/lld bootstrap-clang.conf
+EOF
+
+echo ">>> Rebuilding LLVM/clang/lld with only the wanted targets"
+emerge --oneshot --usepkg=n llvm-core/llvm llvm-core/clang llvm-core/lld
+rm -f /etc/portage/package.env/toolchain-bootstrap /etc/portage/env/bootstrap-clang.conf
+rm -rf "${BOOT}"
+
+echo ">>> Rebuilding Rust + OpenJDK on the new toolchain"
+emerge ev-lang/rust dev-java/openjdk
 
 echo ">>> Bootstrap complete."
 SCRIPT
