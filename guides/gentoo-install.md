@@ -506,7 +506,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "this script must be run as root"
 
 ROOTFS="${ROOTFS:-$HOME/gentoo-rootfs}"
-STAGE3_URL="${STAGE3_URL:-}"                      # link to the gcc musl tarball
+STAGE3_URL="${STAGE3_URL:-https://distfiles.gentoo.org/releases/amd64/autobuilds/20261018T124555Z/stage3-amd64-musl-openrc-20261018T124555Z.tar.xz}"                      # link to the gcc musl tarball
 MUSL_LLVM_PROFILE="${MUSL_LLVM_PROFILE:-default/linux/amd64/23.0/musl/llvm}"  # name from `eselect profile list`
 SKIP_CHROOT="${SKIP_CHROOT:-0}"
 BOOT=/opt/llvm-bootstrap
@@ -632,8 +632,8 @@ echo ">>> Installing binary packages into main system..."
 mkdir -p /var/cache/binpkgs
 cp -a "${ROOTFS}/var/cache/binpkgs/." /var/cache/binpkgs/
 emaint binhost --fix
-# --usepkgonly: a USE/version mismatch fails here instead of silently compiling.
-emerge --usepk dev-lang/rust dev-java/openjdk
+# --usepkg: a USE/version mismatch fails here instead of silently compiling.
+emerge --usepkg dev-lang/rust dev-java/openjdk
 
 echo ">>> Backing up current compiler to build specific targets - so clang doesn't crash"
 LLVM_DIR="$(dirname "$(dirname "$(readlink -f "$(command -v clang)")")")"
@@ -665,12 +665,12 @@ llvm-core/lld bootstrap-clang.conf
 EOF
 
 echo ">>> Rebuilding LLVM/clang/lld with only the wanted targets"
-emerge --oneshot --usepkg=n llvm-core/llvm llvm-core/clang llvm-core/lld
+emerge --oneshot -llvm-core/llvm llvm-core/clang llvm-core/lld
 rm -f /etc/portage/package.env/toolchain-bootstrap /etc/portage/env/bootstrap-clang.conf
 rm -rf "${BOOT}"
 
 echo ">>> Rebuilding Rust + OpenJDK on the new toolchain"
-emerge ev-lang/rust dev-java/openjdk
+emerge dev-lang/rust dev-java/openjdk
 
 echo ">>> Bootstrap complete."
 SCRIPT
